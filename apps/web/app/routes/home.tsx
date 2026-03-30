@@ -8,6 +8,7 @@ import {
 import { useEffect, useMemo, useRef } from 'react'
 import { useOutletContext } from 'react-router'
 import { useAudioSocket } from '../hooks/use-audio-socket.js'
+import { useSoundEffects } from '../hooks/use-sound-effects.js'
 
 interface RootContext {
   health: { status: string; timestamp: string } | null
@@ -80,7 +81,33 @@ export default function Home() {
   }, [wsConfig])
 
   const audio = useAudioSocket(wsUrl)
+  const { play } = useSoundEffects()
+  const prevPhaseRef = useRef(audio.phase)
   const spaceDownRef = useRef(false)
+
+  // Play audio cues on phase transitions
+  useEffect(() => {
+    const prev = prevPhaseRef.current
+    const curr = audio.phase
+    prevPhaseRef.current = curr
+
+    if (prev === curr) return
+
+    // Recording started: ascending chirp
+    if (curr === 'recording') {
+      play('recordingStarted')
+    }
+
+    // Recording stopped, processing started: send sound
+    if (prev === 'recording' && (curr === 'transcribing' || curr === 'thinking')) {
+      play('messageSent')
+    }
+
+    // Error states: play error tone
+    if (curr === 'done' && (audio.transcriptionError || audio.claudeError)) {
+      play('error')
+    }
+  }, [audio.phase, audio.transcriptionError, audio.claudeError, play])
 
   // Handle push-to-talk with spacebar
   useEffect(() => {
