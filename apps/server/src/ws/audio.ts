@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, Server } from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
-import { chat } from '../voice/claude.js'
+import { chat, clearSession } from '../voice/claude.js'
+import { parseCommand } from '../voice/commands.js'
 import { transcribe } from '../voice/stt.js'
 import { synthesize } from '../voice/tts.js'
 
@@ -150,6 +151,27 @@ async function handleControl(
         send(ws, { type: 'transcription', text: '', error: message })
         break
       }
+
+      // Check for voice commands before sending to Claude
+      const { command, text: cleanedText } = parseCommand(userText)
+
+      if (command === 'disregard') {
+        console.log(`[ws] command    disregard — dropping message`)
+        send(ws, { type: 'transcription', text: userText })
+        send(ws, { type: 'command', command: 'disregard' })
+        break
+      }
+
+      if (command === 'clear') {
+        console.log(`[ws] command    clear — resetting session ${sessionId.slice(0, 8)}`)
+        clearSession(sessionId)
+        send(ws, { type: 'transcription', text: userText })
+        send(ws, { type: 'command', command: 'clear' })
+        break
+      }
+
+      // Use the cleaned text (command keyword stripped) going forward
+      userText = cleanedText
 
       send(ws, { type: 'transcription', text: userText })
 
