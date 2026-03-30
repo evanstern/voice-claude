@@ -5,6 +5,7 @@ import { ConnectionHeader } from '../components/connection-header.js'
 import { MicButton } from '../components/mic-button.js'
 import { StatusIndicator } from '../components/status-indicator.js'
 import { useAudioSocket } from '../hooks/use-audio-socket.js'
+import { useSoundEffects } from '../hooks/use-sound-effects.js'
 
 interface RootContext {
   health: { status: string; timestamp: string } | null
@@ -40,6 +41,8 @@ export default function Home() {
   }, [wsConfig])
 
   const audio = useAudioSocket(wsUrl)
+  const { play } = useSoundEffects()
+  const phaseRef = useRef(audio.phase)
   const spaceDownRef = useRef(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const nextIdRef = useRef(1)
@@ -80,21 +83,21 @@ export default function Home() {
   }, [audio.transcription, audio.transcriptionError])
 
   // When Claude responds and phase goes to done, finalize the entry
-  const prevPhaseRef = useRef(audio.phase)
   useEffect(() => {
-    if (audio.phase === 'done' && prevPhaseRef.current !== 'done') {
+    if (audio.phase === 'done' && phaseRef.current !== 'done') {
       if (pendingEntry) {
         const finalized: ConversationEntry = {
           ...pendingEntry,
           assistantText: audio.claudeResponse,
           assistantError: audio.claudeError,
-          toolCalls: audio.toolCalls.length > 0 ? [...audio.toolCalls] : undefined,
+          toolCalls:
+            audio.toolCalls.length > 0 ? [...audio.toolCalls] : undefined,
         }
         setConversation((prev) => [...prev, finalized])
         setPendingEntry(null)
       }
     }
-    prevPhaseRef.current = audio.phase
+    phaseRef.current = audio.phase
   }, [
     audio.phase,
     audio.claudeResponse,
@@ -103,7 +106,7 @@ export default function Home() {
     pendingEntry,
   ])
 
-  // Auto-scroll to bottom when conversation changes or status changes
+  // Auto-scroll to bottom
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
@@ -113,6 +116,31 @@ export default function Home() {
   useEffect(() => {
     scrollToBottom()
   }, [conversation, pendingEntry, audio.phase, scrollToBottom])
+
+  // Play audio cues on phase transitions
+  const prevPhaseForSoundRef = useRef(audio.phase)
+  useEffect(() => {
+    const prev = prevPhaseForSoundRef.current
+    const curr = audio.phase
+    prevPhaseForSoundRef.current = curr
+
+    if (prev === curr) return
+
+    if (curr === 'recording') {
+      play('recordingStarted')
+    }
+
+    if (
+      prev === 'recording' &&
+      (curr === 'transcribing' || curr === 'thinking')
+    ) {
+      play('messageSent')
+    }
+
+    if (curr === 'done' && (audio.transcriptionError || audio.claudeError)) {
+      play('error')
+    }
+  }, [audio.phase, audio.transcriptionError, audio.claudeError, play])
 
   // Push-to-talk with spacebar
   useEffect(() => {
@@ -168,6 +196,15 @@ export default function Home() {
 
   return (
     <div className="flex flex-col h-dvh max-w-2xl mx-auto">
+      {/* Voice command toast */}
+      {audio.commandNotice && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 animate-fade-in-up">
+          <div className="rounded-lg border border-border bg-card px-4 py-2 shadow-lg text-sm text-muted-foreground">
+            {audio.commandNotice}
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <ConnectionHeader
         apiConnected={health?.status === 'ok'}
@@ -180,7 +217,6 @@ export default function Home() {
         className="flex-1 overflow-y-auto overscroll-contain px-4 py-4"
       >
         <div className="flex flex-col gap-4">
-          {/* Empty state */}
           {isEmpty && (
             <div className="flex flex-col items-center justify-center h-full min-h-[50vh] text-center gap-3 animate-fade-in-up">
               <div className="w-12 h-12 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
@@ -204,10 +240,8 @@ export default function Home() {
             </div>
           )}
 
-          {/* Past conversation entries */}
           {conversation.map((entry) => (
             <div key={entry.id} className="flex flex-col gap-3">
-              {/* User message */}
               {(entry.userText || entry.userError) && (
                 <ChatMessage
                   role="user"
@@ -215,7 +249,6 @@ export default function Home() {
                   error={entry.userError}
                 />
               )}
-              {/* Assistant message */}
               {(entry.assistantText || entry.assistantError) && (
                 <ChatMessage
                   role="assistant"
@@ -227,7 +260,6 @@ export default function Home() {
             </div>
           ))}
 
-          {/* In-progress: pending user message */}
           {pendingEntry && (
             <div className="flex flex-col gap-3">
               <ChatMessage
@@ -238,7 +270,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* Live status indicator */}
           {showStatus && (
             <StatusIndicator
               phase={audio.phase}
@@ -248,7 +279,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Fixed mic button at bottom */}
       <MicButton
         phase={audio.phase}
         connected={audio.connected}
