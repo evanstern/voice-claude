@@ -2,6 +2,11 @@
 
 ## Project: voice-claude
 
+## Active Worktree: always-listening-strategy
+This is a worktree branch for designing the always-listening architecture.
+Scope: Design doc only, no implementation changes.
+Other parallel branches: dockerize, voice-commands, cost-audit, audio-feedback, chat-redesign
+
 A hands-free voice interface for Claude Code. The goal: talk to Claude through Bluetooth earbuds (Pixel Buds) on an Android phone while your hands are busy — like working at a bakery — and have Claude working on code, managing repos, and talking back.
 
 ## Origin
