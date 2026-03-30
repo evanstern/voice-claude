@@ -8,7 +8,7 @@ A hands-free voice interface for Claude Code. The goal: talk to Claude through B
 
 This project was spun off from the `evanstern/ideas` repo after exploring the concept. The core insight: Claude Code's web app (claude.ai/code) works today with voice typing, but what we really want is a **full voice loop** — continuous speech-to-text input, Claude processing with tool use, and text-to-speech output back through earbuds.
 
-## Architecture (Initial Design)
+## Architecture (PROPOSED — verify with user before building)
 
 ```
 Pixel Buds → Phone Mic → Speech-to-Text (Google STT / Whisper)
@@ -51,9 +51,18 @@ config/         — Configuration files
 docs/           — Documentation and design notes
 ```
 
+**NOTE TO CLAUDE:** This architecture was captured from an initial brainstorming conversation.
+Before implementing, walk through this design with the user to confirm it still reflects their
+vision. Things may have evolved since this was written. Ask the user: "I've read the CLAUDE.md —
+does this architecture still match your vision, or has your thinking evolved?"
+
 ## Getting Started
 
-This project is in its initial scaffolding phase. Next steps:
+When first opening this project in Claude Code:
+1. **Review the architecture above with the user.** Confirm the proposed design before writing code.
+2. Then proceed with the build phases below.
+
+### Build Phases
 1. Set up Node.js/TypeScript project with basic structure
 2. Get a minimal WebSocket connection between phone browser and server
 3. Wire up STT (speech-to-text) on incoming audio
