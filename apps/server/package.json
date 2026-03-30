@@ -1,0 +1,32 @@
+{
+  "name": "@voice-claude/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./trpc/router": "./src/trpc/router.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
+    "@voice-claude/contracts": "workspace:^",
+    "@hono/node-server": "^1.13.0",
+    "@trpc/server": "^11.0.0",
+    "hono": "^4.6.0",
+    "openai": "^4.96.0",
+    "tsx": "^4.19.0",
+    "ws": "^8.18.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/ws": "^8.18.0"
+  }
+}

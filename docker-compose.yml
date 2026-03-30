@@ -1,0 +1,40 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile.dev
+    ports:
+      - "${PORT:-4000}:4000"
+    env_file:
+      - .env
+    environment:
+      PORT: "4000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/apps/server/node_modules
+      - /app/apps/web/node_modules
+      - /app/packages/contracts/node_modules
+      - /app/packages/shared/node_modules
+      - /app/packages/ui/node_modules
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile.dev
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      SERVER_URL: http://server:4000
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/apps/server/node_modules
+      - /app/apps/web/node_modules
+      - /app/packages/contracts/node_modules
+      - /app/packages/shared/node_modules
+      - /app/packages/ui/node_modules
+    depends_on:
+      - server
