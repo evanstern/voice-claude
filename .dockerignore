@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+.react-router/
+.turbo/
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+.git
+.gitignore
+.claude/
+*.md
+!pnpm-workspace.yaml
+docker-compose*.yml
+Dockerfile*
