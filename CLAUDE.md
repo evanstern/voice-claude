@@ -103,3 +103,41 @@ pnpm typecheck    # tsc --noEmit
 4. Connect to Claude API with a simple tool (e.g., read a file)
 5. Wire up TTS on Claude's response
 6. Test the full loop: speak → transcribe → Claude → synthesize → hear
+
+## Production Deployment (Docker)
+
+### Prerequisites
+- Docker and Docker Compose v2
+- `.env` file with required API keys (see `.env.example`)
+
+### Build and Run
+```bash
+# Build and start production containers
+docker compose -f docker-compose.prod.yml up --build -d
+
+# View logs
+docker compose -f docker-compose.prod.yml logs -f
+
+# Stop
+docker compose -f docker-compose.prod.yml down
+```
+
+### Architecture
+Both `apps/server` and `apps/web` have multi-stage production Dockerfiles:
+1. **base** -- node:22-slim with pnpm enabled
+2. **deps** -- installs all dependencies (full lockfile)
+3. **build** -- runs `pnpm build` via Turborepo
+4. **runner** -- minimal image with only production dependencies and built artifacts
+
+### Environment Variables
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `4000` | Server port |
+| `WEB_PORT` | `3000` | Web app port |
+| `SERVER_URL` | `http://server:4000` | Internal server URL (used by web container) |
+| `ANTHROPIC_API_KEY` | -- | Required for Claude API |
+| `OPENAI_API_KEY` | -- | Required for Whisper STT / TTS |
+| `WORK_DIR` | `/workspace` | Directory mounted into server for Claude tool execution |
+
+### Volume Mounts
+The server container mounts `WORK_DIR` (defaults to `./workspace`) into `/workspace` inside the container. This is the directory Claude tools operate on (git, file ops, shell).

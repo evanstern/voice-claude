@@ -1,0 +1,40 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    ports:
+      - "${PORT:-4000}:4000"
+    env_file:
+      - .env
+    environment:
+      PORT: "4000"
+      NODE_ENV: production
+      WORK_DIR: /workspace
+    volumes:
+      - ${WORK_DIR:-./workspace}:/workspace
+    restart: unless-stopped
+    networks:
+      - voice-claude
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      PORT: "3000"
+      NODE_ENV: production
+      SERVER_URL: http://server:4000
+    depends_on:
+      - server
+    restart: unless-stopped
+    networks:
+      - voice-claude
+
+networks:
+  voice-claude:
+    driver: bridge
