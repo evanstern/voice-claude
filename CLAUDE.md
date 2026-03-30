@@ -2,11 +2,6 @@
 
 ## Project: voice-claude
 
-## Active Worktree: audio-feedback
-This is a worktree branch for adding audio feedback cues.
-Scope: Sound effects hook, phase transition sounds, hands-free UX.
-Other parallel branches: always-listening-strategy, dockerize, voice-commands, cost-audit, chat-redesign
-
 A hands-free voice interface for Claude Code. The goal: talk to Claude through Bluetooth earbuds (Pixel Buds) on an Android phone while your hands are busy — like working at a bakery — and have Claude working on code, managing repos, and talking back.
 
 ## Origin

@@ -156,6 +156,15 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center px-6 py-12">
+      {/* Voice command toast */}
+      {audio.commandNotice && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 animate-fade-in-up">
+          <div className="rounded-lg border border-border bg-card px-4 py-2 shadow-lg text-sm text-muted-foreground">
+            {audio.commandNotice}
+          </div>
+        </div>
+      )}
+
       <div className="max-w-lg w-full space-y-8 animate-fade-in-up">
         <div className="text-center space-y-3">
           <h1 className="text-4xl font-bold tracking-tight text-foreground">
