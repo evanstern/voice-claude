@@ -1,18 +1,24 @@
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@voice-claude/ui/components/card'
-import { useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router'
+import { ChatMessage } from '../components/chat-message.js'
+import { ConnectionHeader } from '../components/connection-header.js'
+import { MicButton } from '../components/mic-button.js'
+import { StatusIndicator } from '../components/status-indicator.js'
 import { useAudioSocket } from '../hooks/use-audio-socket.js'
 import { useSoundEffects } from '../hooks/use-sound-effects.js'
 
 interface RootContext {
   health: { status: string; timestamp: string } | null
   wsConfig: { path: string; port: number } | null
+}
+
+interface ConversationEntry {
+  id: number
+  userText: string
+  userError?: string | null
+  assistantText?: string | null
+  assistantError?: string | null
+  toolCalls?: Array<{ name: string; input: string; result: string }>
 }
 
 export function meta() {
@@ -23,52 +29,6 @@ export function meta() {
       content: 'Hands-free voice interface for Claude Code',
     },
   ]
-}
-
-function MicIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-      strokeWidth={1.5}
-      stroke="currentColor"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z"
-      />
-    </svg>
-  )
-}
-
-function StopIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-      strokeWidth={1.5}
-      stroke="currentColor"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M5.25 7.5A2.25 2.25 0 0 1 7.5 5.25h9a2.25 2.25 0 0 1 2.25 2.25v9a2.25 2.25 0 0 1-2.25 2.25h-9a2.25 2.25 0 0 1-2.25-2.25v-9Z"
-      />
-    </svg>
-  )
-}
-
-const PHASE_LABELS: Record<string, string> = {
-  idle: 'Hold space to speak',
-  recording: 'Release space to send',
-  transcribing: 'Transcribing...',
-  thinking: 'Claude is thinking...',
-  synthesizing: 'Generating speech...',
-  speaking: 'Speaking...',
-  done: 'Hold space to speak',
 }
 
 export default function Home() {
@@ -82,64 +42,135 @@ export default function Home() {
 
   const audio = useAudioSocket(wsUrl)
   const { play } = useSoundEffects()
-  const prevPhaseRef = useRef(audio.phase)
+  const phaseRef = useRef(audio.phase)
   const spaceDownRef = useRef(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const nextIdRef = useRef(1)
+
+  // Conversation history
+  const [conversation, setConversation] = useState<ConversationEntry[]>([])
+  const [pendingEntry, setPendingEntry] = useState<ConversationEntry | null>(
+    null,
+  )
+
+  // When transcription arrives, start a new pending entry
+  const prevTranscriptionRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (
+      audio.transcription &&
+      audio.transcription !== prevTranscriptionRef.current
+    ) {
+      prevTranscriptionRef.current = audio.transcription
+      const entry: ConversationEntry = {
+        id: nextIdRef.current++,
+        userText: audio.transcription,
+        userError: audio.transcriptionError,
+      }
+      setPendingEntry(entry)
+    } else if (
+      audio.transcription === null &&
+      audio.transcriptionError &&
+      audio.transcriptionError !== prevTranscriptionRef.current
+    ) {
+      prevTranscriptionRef.current = audio.transcriptionError
+      const entry: ConversationEntry = {
+        id: nextIdRef.current++,
+        userText: '',
+        userError: audio.transcriptionError,
+      }
+      setPendingEntry(entry)
+    }
+  }, [audio.transcription, audio.transcriptionError])
+
+  // When Claude responds and phase goes to done, finalize the entry
+  useEffect(() => {
+    if (audio.phase === 'done' && phaseRef.current !== 'done') {
+      if (pendingEntry) {
+        const finalized: ConversationEntry = {
+          ...pendingEntry,
+          assistantText: audio.claudeResponse,
+          assistantError: audio.claudeError,
+          toolCalls:
+            audio.toolCalls.length > 0 ? [...audio.toolCalls] : undefined,
+        }
+        setConversation((prev) => [...prev, finalized])
+        setPendingEntry(null)
+      }
+    }
+    phaseRef.current = audio.phase
+  }, [
+    audio.phase,
+    audio.claudeResponse,
+    audio.claudeError,
+    audio.toolCalls,
+    pendingEntry,
+  ])
+
+  // Auto-scroll to bottom
+  const scrollToBottom = useCallback(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [])
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [conversation, pendingEntry, audio.phase, scrollToBottom])
 
   // Play audio cues on phase transitions
+  const prevPhaseForSoundRef = useRef(audio.phase)
   useEffect(() => {
-    const prev = prevPhaseRef.current
+    const prev = prevPhaseForSoundRef.current
     const curr = audio.phase
-    prevPhaseRef.current = curr
+    prevPhaseForSoundRef.current = curr
 
     if (prev === curr) return
 
-    // Recording started: ascending chirp
     if (curr === 'recording') {
       play('recordingStarted')
     }
 
-    // Recording stopped, processing started: send sound
-    if (prev === 'recording' && (curr === 'transcribing' || curr === 'thinking')) {
+    if (
+      prev === 'recording' &&
+      (curr === 'transcribing' || curr === 'thinking')
+    ) {
       play('messageSent')
     }
 
-    // Error states: play error tone
     if (curr === 'done' && (audio.transcriptionError || audio.claudeError)) {
       play('error')
     }
   }, [audio.phase, audio.transcriptionError, audio.claudeError, play])
 
-  // Handle push-to-talk with spacebar
+  // Push-to-talk with spacebar
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Only respond to space when not in an input field
-      if (e.code !== 'Space' || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+      if (
+        e.code !== 'Space' ||
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
         return
       }
-
-      // Prevent default scroll behavior
       e.preventDefault()
-
-      // Prevent key repeat from triggering multiple starts
       if (spaceDownRef.current) return
       spaceDownRef.current = true
 
-      // Only start if we're idle or done and connected
-      if ((audio.phase === 'idle' || audio.phase === 'done') && audio.connected && !audio.busy) {
+      if (
+        (audio.phase === 'idle' || audio.phase === 'done') &&
+        audio.connected &&
+        !audio.busy
+      ) {
         audio.startRecording()
       }
     }
 
     const handleKeyUp = (e: KeyboardEvent) => {
       if (e.code !== 'Space') return
-      
-      // Prevent default scroll behavior
       e.preventDefault()
-      
       if (!spaceDownRef.current) return
       spaceDownRef.current = false
 
-      // Only stop if we're actually recording
       if (audio.phase === 'recording') {
         audio.stopRecording()
       }
@@ -154,198 +185,107 @@ export default function Home() {
     }
   }, [audio])
 
+  const showStatus =
+    audio.phase === 'recording' ||
+    audio.phase === 'transcribing' ||
+    audio.phase === 'thinking' ||
+    audio.phase === 'synthesizing' ||
+    audio.phase === 'speaking'
+
+  const isEmpty = conversation.length === 0 && !pendingEntry && !showStatus
+
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center px-6 py-12">
+    <div className="flex flex-col h-dvh max-w-2xl mx-auto">
       {/* Voice command toast */}
       {audio.commandNotice && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 animate-fade-in-up">
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 animate-fade-in-up">
           <div className="rounded-lg border border-border bg-card px-4 py-2 shadow-lg text-sm text-muted-foreground">
             {audio.commandNotice}
           </div>
         </div>
       )}
 
-      <div className="max-w-lg w-full space-y-8 animate-fade-in-up">
-        <div className="text-center space-y-3">
-          <h1 className="text-4xl font-bold tracking-tight text-foreground">
-            Voice Claude
-          </h1>
-          <p className="text-lg text-muted-foreground">
-            Hands-free voice interface for Claude Code
-          </p>
-        </div>
+      {/* Header */}
+      <ConnectionHeader
+        apiConnected={health?.status === 'ok'}
+        wsConnected={audio.connected}
+      />
 
-        {/* Mic button */}
-        <div className="flex flex-col items-center gap-4">
-          <button
-            type="button"
-            onClick={
-              audio.phase === 'recording'
-                ? audio.stopRecording
-                : audio.startRecording
-            }
-            disabled={!audio.connected || audio.busy}
-            className={`relative inline-flex items-center justify-center w-24 h-24 rounded-full transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 disabled:cursor-not-allowed ${
-              audio.phase === 'recording'
-                ? 'bg-red-500/20 border-2 border-red-500 text-red-400 hover:bg-red-500/30'
-                : audio.busy
-                  ? 'bg-primary/5 border-2 border-primary/20 text-primary/50'
-                  : 'bg-primary/10 border-2 border-primary/40 text-primary hover:bg-primary/20 hover:border-primary/60'
-            }`}
-          >
-            {audio.phase === 'recording' && (
-              <span className="absolute inset-0 rounded-full animate-pulse-ring bg-red-500/20" />
-            )}
-            {audio.busy && (
-              <span className="absolute inset-0 rounded-full animate-pulse bg-primary/10" />
-            )}
-            {audio.phase === 'recording' ? (
-              <StopIcon className="w-10 h-10 relative z-10" />
-            ) : (
-              <MicIcon className="w-10 h-10 relative z-10" />
-            )}
-          </button>
-          <span className="text-sm text-muted-foreground">
-            {!audio.connected
-              ? 'Connecting...'
-              : PHASE_LABELS[audio.phase] ?? 'Hold space to speak'}
-          </span>
-        </div>
-
-        <div className="space-y-4">
-          {/* Connection status */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Connection</CardTitle>
-              <CardDescription>Backend API & WebSocket</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex items-center gap-3">
-                <div
-                  className={`w-2.5 h-2.5 rounded-full ${
-                    health?.status === 'ok'
-                      ? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]'
-                      : 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.5)]'
-                  }`}
-                />
-                <span className="text-sm text-foreground">
-                  API {health?.status === 'ok' ? 'connected' : 'disconnected'}
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div
-                  className={`w-2.5 h-2.5 rounded-full ${
-                    audio.connected
-                      ? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]'
-                      : 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.5)]'
-                  }`}
-                />
-                <span className="text-sm text-foreground">
-                  WebSocket{' '}
-                  {audio.connected ? 'connected' : 'disconnected'}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Transcription */}
-          {audio.transcription !== null && (
-            <Card>
-              <CardHeader>
-                <CardTitle>You said</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {audio.transcriptionError ? (
-                  <p className="text-sm text-destructive">
-                    {audio.transcriptionError}
-                  </p>
-                ) : audio.transcription ? (
-                  <p className="text-sm text-foreground leading-relaxed italic">
-                    &ldquo;{audio.transcription}&rdquo;
-                  </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground italic">
-                    No speech detected
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Processing indicator */}
-          {(audio.phase === 'transcribing' ||
-            audio.phase === 'thinking' ||
-            audio.phase === 'synthesizing' ||
-            audio.phase === 'speaking') && (
-            <Card>
-              <CardContent className="py-4">
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-2 h-2 rounded-full ${
-                      audio.phase === 'speaking'
-                        ? 'bg-green-500 animate-pulse'
-                        : 'bg-primary animate-pulse'
-                    }`}
+      {/* Scrollable chat area */}
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto overscroll-contain px-4 py-4"
+      >
+        <div className="flex flex-col gap-4">
+          {isEmpty && (
+            <div className="flex flex-col items-center justify-center h-full min-h-[50vh] text-center gap-3 animate-fade-in-up">
+              <div className="w-12 h-12 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
+                <svg
+                  className="w-6 h-6 text-primary/60"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={1.5}
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z"
                   />
-                  <span className="text-sm text-muted-foreground">
-                    {audio.phase === 'transcribing'
-                      ? 'Transcribing audio...'
-                      : audio.phase === 'synthesizing'
-                        ? 'Generating speech...'
-                        : audio.phase === 'speaking'
-                          ? 'Speaking...'
-                          : audio.activeTools.length > 0
-                            ? `Running ${audio.activeTools[audio.activeTools.length - 1]}...`
-                            : 'Claude is thinking...'}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
+                </svg>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Tap the mic or hold space to start talking
+              </p>
+            </div>
           )}
 
-          {/* Tool calls */}
-          {audio.toolCalls.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Tools used</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {audio.toolCalls.map((tc, i) => (
-                  <div
-                    key={`${tc.name}-${i}`}
-                    className="text-xs font-mono bg-secondary/50 rounded px-3 py-2"
-                  >
-                    <span className="text-primary">{tc.name}</span>
-                    <span className="text-muted-foreground">
-                      ({JSON.parse(tc.input).command ?? JSON.parse(tc.input).path ?? '...'})
-                    </span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
+          {conversation.map((entry) => (
+            <div key={entry.id} className="flex flex-col gap-3">
+              {(entry.userText || entry.userError) && (
+                <ChatMessage
+                  role="user"
+                  content={entry.userText || 'No speech detected'}
+                  error={entry.userError}
+                />
+              )}
+              {(entry.assistantText || entry.assistantError) && (
+                <ChatMessage
+                  role="assistant"
+                  content={entry.assistantText ?? ''}
+                  error={entry.assistantError}
+                  toolCalls={entry.toolCalls}
+                />
+              )}
+            </div>
+          ))}
+
+          {pendingEntry && (
+            <div className="flex flex-col gap-3">
+              <ChatMessage
+                role="user"
+                content={pendingEntry.userText || 'No speech detected'}
+                error={pendingEntry.userError}
+              />
+            </div>
           )}
 
-          {/* Claude response */}
-          {audio.claudeResponse !== null && audio.phase === 'done' && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Claude</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {audio.claudeError ? (
-                  <p className="text-sm text-destructive">
-                    {audio.claudeError}
-                  </p>
-                ) : (
-                  <p className="text-sm text-foreground leading-relaxed">
-                    {audio.claudeResponse}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
+          {showStatus && (
+            <StatusIndicator
+              phase={audio.phase}
+              activeTools={audio.activeTools}
+            />
           )}
         </div>
       </div>
+
+      <MicButton
+        phase={audio.phase}
+        connected={audio.connected}
+        busy={audio.busy}
+        onStart={audio.startRecording}
+        onStop={audio.stopRecording}
+      />
     </div>
   )
 }
