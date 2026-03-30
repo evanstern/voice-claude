@@ -12,6 +12,7 @@ interface AudioSocketMessage {
   name?: string
   input?: string
   format?: string
+  command?: string
   toolCalls?: Array<{ name: string; input: string; result: string }>
 }
 
@@ -35,6 +36,7 @@ interface AudioSocketState {
   claudeError: string | null
   toolCalls: Array<{ name: string; input: string; result: string }>
   activeTools: string[]
+  commandNotice: string | null
 }
 
 function playAudio(data: ArrayBuffer): Promise<void> {
@@ -74,7 +76,10 @@ export function useAudioSocket(wsUrl: string | null) {
     claudeError: null,
     toolCalls: [],
     activeTools: [],
+    commandNotice: null,
   })
+
+  const commandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (!wsUrl) return
@@ -219,6 +224,39 @@ export function useAudioSocket(wsUrl: string | null) {
             setState((s) => ({ ...s, phase: 'done' }))
             break
 
+          case 'command': {
+            const label =
+              msg.command === 'disregard'
+                ? 'Message discarded'
+                : msg.command === 'clear'
+                  ? 'Conversation cleared'
+                  : `Command: ${msg.command}`
+            console.log(`[audio] voice command: ${msg.command}`)
+            setState((s) => ({
+              ...s,
+              phase: 'done',
+              commandNotice: label,
+              // Clear conversation state on reset
+              ...(msg.command === 'clear'
+                ? {
+                    transcription: null,
+                    claudeResponse: null,
+                    claudeError: null,
+                    toolCalls: [],
+                  }
+                : {}),
+            }))
+            // Auto-dismiss the notice after 3 seconds
+            if (commandTimerRef.current) {
+              clearTimeout(commandTimerRef.current)
+            }
+            commandTimerRef.current = setTimeout(() => {
+              setState((s) => ({ ...s, commandNotice: null }))
+              commandTimerRef.current = null
+            }, 3000)
+            break
+          }
+
           default:
             console.log(`[audio] ${msg.type}`, msg)
         }
@@ -303,6 +341,7 @@ export function useAudioSocket(wsUrl: string | null) {
       claudeError: null,
       toolCalls: [],
       activeTools: [],
+      commandNotice: null,
     }))
   }, [])
 

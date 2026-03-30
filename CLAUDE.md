@@ -2,6 +2,11 @@
 
 ## Project: voice-claude
 
+## Active Worktree: voice-commands
+This is a worktree branch for implementing voice command keywords.
+Scope: Command detection module, WebSocket integration, client handling.
+Other parallel branches: always-listening-strategy, dockerize, cost-audit, audio-feedback, chat-redesign
+
 A hands-free voice interface for Claude Code. The goal: talk to Claude through Bluetooth earbuds (Pixel Buds) on an Android phone while your hands are busy — like working at a bakery — and have Claude working on code, managing repos, and talking back.
 
 ## Origin
