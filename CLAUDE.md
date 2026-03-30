@@ -2,6 +2,11 @@
 
 ## Project: voice-claude
 
+## Active Worktree: chat-redesign
+This is a worktree branch for redesigning the chat UI.
+Scope: Scrollable conversation view, mobile-first for Pixel 10 Fold.
+Other parallel branches: always-listening-strategy, dockerize, voice-commands, cost-audit, audio-feedback
+
 A hands-free voice interface for Claude Code. The goal: talk to Claude through Bluetooth earbuds (Pixel Buds) on an Android phone while your hands are busy — like working at a bakery — and have Claude working on code, managing repos, and talking back.
 
 ## Origin
