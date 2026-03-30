@@ -5,7 +5,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@voice-claude/ui/components/card'
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useOutletContext } from 'react-router'
 import { useAudioSocket } from '../hooks/use-audio-socket.js'
 
@@ -61,11 +61,13 @@ function StopIcon({ className }: { className?: string }) {
 }
 
 const PHASE_LABELS: Record<string, string> = {
-  idle: 'Tap to speak',
-  recording: 'Tap to stop',
+  idle: 'Hold space to speak',
+  recording: 'Release space to send',
   transcribing: 'Transcribing...',
   thinking: 'Claude is thinking...',
-  done: 'Tap to speak',
+  synthesizing: 'Generating speech...',
+  speaking: 'Speaking...',
+  done: 'Hold space to speak',
 }
 
 export default function Home() {
@@ -78,6 +80,52 @@ export default function Home() {
   }, [wsConfig])
 
   const audio = useAudioSocket(wsUrl)
+  const spaceDownRef = useRef(false)
+
+  // Handle push-to-talk with spacebar
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only respond to space when not in an input field
+      if (e.code !== 'Space' || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return
+      }
+
+      // Prevent default scroll behavior
+      e.preventDefault()
+
+      // Prevent key repeat from triggering multiple starts
+      if (spaceDownRef.current) return
+      spaceDownRef.current = true
+
+      // Only start if we're idle or done and connected
+      if ((audio.phase === 'idle' || audio.phase === 'done') && audio.connected && !audio.busy) {
+        audio.startRecording()
+      }
+    }
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code !== 'Space') return
+      
+      // Prevent default scroll behavior
+      e.preventDefault()
+      
+      if (!spaceDownRef.current) return
+      spaceDownRef.current = false
+
+      // Only stop if we're actually recording
+      if (audio.phase === 'recording') {
+        audio.stopRecording()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+    }
+  }, [audio])
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center px-6 py-12">
@@ -124,7 +172,7 @@ export default function Home() {
           <span className="text-sm text-muted-foreground">
             {!audio.connected
               ? 'Connecting...'
-              : PHASE_LABELS[audio.phase] ?? 'Tap to speak'}
+              : PHASE_LABELS[audio.phase] ?? 'Hold space to speak'}
           </span>
         </div>
 
@@ -189,17 +237,30 @@ export default function Home() {
           )}
 
           {/* Processing indicator */}
-          {(audio.phase === 'transcribing' || audio.phase === 'thinking') && (
+          {(audio.phase === 'transcribing' ||
+            audio.phase === 'thinking' ||
+            audio.phase === 'synthesizing' ||
+            audio.phase === 'speaking') && (
             <Card>
               <CardContent className="py-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                  <div
+                    className={`w-2 h-2 rounded-full ${
+                      audio.phase === 'speaking'
+                        ? 'bg-green-500 animate-pulse'
+                        : 'bg-primary animate-pulse'
+                    }`}
+                  />
                   <span className="text-sm text-muted-foreground">
                     {audio.phase === 'transcribing'
                       ? 'Transcribing audio...'
-                      : audio.activeTools.length > 0
-                        ? `Running ${audio.activeTools[audio.activeTools.length - 1]}...`
-                        : 'Claude is thinking...'}
+                      : audio.phase === 'synthesizing'
+                        ? 'Generating speech...'
+                        : audio.phase === 'speaking'
+                          ? 'Speaking...'
+                          : audio.activeTools.length > 0
+                            ? `Running ${audio.activeTools[audio.activeTools.length - 1]}...`
+                            : 'Claude is thinking...'}
                   </span>
                 </div>
               </CardContent>

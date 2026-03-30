@@ -11,6 +11,7 @@ interface AudioSocketMessage {
   error?: string
   name?: string
   input?: string
+  format?: string
   toolCalls?: Array<{ name: string; input: string; result: string }>
 }
 
@@ -19,6 +20,8 @@ type ProcessingPhase =
   | 'recording'
   | 'transcribing'
   | 'thinking'
+  | 'synthesizing'
+  | 'speaking'
   | 'done'
 
 interface AudioSocketState {
@@ -34,10 +37,31 @@ interface AudioSocketState {
   activeTools: string[]
 }
 
+function playAudio(data: ArrayBuffer): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const blob = new Blob([data], { type: 'audio/mpeg' })
+    const url = URL.createObjectURL(blob)
+    const audio = new Audio(url)
+    audio.onended = () => {
+      URL.revokeObjectURL(url)
+      resolve()
+    }
+    audio.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('Audio playback failed'))
+    }
+    audio.play().catch(reject)
+  })
+}
+
 export function useAudioSocket(wsUrl: string | null) {
   const wsRef = useRef<WebSocket | null>(null)
+  const currentUrlRef = useRef<string | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const chunksRef = useRef<Blob[]>([])
+  const expectingAudioRef = useRef(false)
+  const audioPlaybackRef = useRef<Promise<void> | null>(null)
 
   const [state, setState] = useState<AudioSocketState>({
     connected: false,
@@ -55,7 +79,21 @@ export function useAudioSocket(wsUrl: string | null) {
   useEffect(() => {
     if (!wsUrl) return
 
+    // If we already have a connection to this URL, don't recreate it
+    if (wsRef.current && currentUrlRef.current === wsUrl && wsRef.current.readyState !== WebSocket.CLOSED) {
+      console.log('[audio] reusing existing WebSocket connection')
+      return
+    }
+
+    // Close old connection only if URL changed
+    if (wsRef.current && currentUrlRef.current !== wsUrl) {
+      console.log('[audio] URL changed, closing old connection')
+      wsRef.current.close()
+    }
+
+    currentUrlRef.current = wsUrl
     const ws = new WebSocket(wsUrl)
+    ws.binaryType = 'arraybuffer'
     wsRef.current = ws
 
     ws.onopen = () => {
@@ -64,6 +102,33 @@ export function useAudioSocket(wsUrl: string | null) {
     }
 
     ws.onmessage = (event) => {
+      // Binary message = TTS audio
+      if (event.data instanceof ArrayBuffer) {
+        if (!expectingAudioRef.current) {
+          console.warn('[audio] unexpected binary message, ignoring')
+          return
+        }
+        expectingAudioRef.current = false
+        const bytes = event.data.byteLength
+        console.log(`[audio] received TTS audio: ${(bytes / 1024).toFixed(1)} KB`)
+
+        setState((s) => ({ ...s, phase: 'speaking' }))
+        const playbackPromise = playAudio(event.data)
+          .then(() => {
+            console.log('[audio] playback complete')
+            setState((s) => ({ ...s, phase: 'done' }))
+          })
+          .catch((err) => {
+            console.error('[audio] playback error:', err)
+            setState((s) => ({ ...s, phase: 'done' }))
+          })
+        
+        // Store playback promise so it can complete even after hot reload
+        audioPlaybackRef.current = playbackPromise
+        return
+      }
+
+      // Text message = JSON control
       try {
         const msg: AudioSocketMessage = JSON.parse(event.data)
 
@@ -94,7 +159,6 @@ export function useAudioSocket(wsUrl: string | null) {
               ...s,
               transcription: msg.text ?? null,
               transcriptionError: msg.error ?? null,
-              // Don't change phase here — 'thinking' will follow if text was non-empty
               phase: msg.text ? s.phase : 'done',
             }))
             break
@@ -115,26 +179,51 @@ export function useAudioSocket(wsUrl: string | null) {
           case 'claude_response':
             if (msg.error) {
               console.error(`[audio] claude error: ${msg.error}`)
+              setState((s) => ({
+                ...s,
+                phase: 'done',
+                claudeResponse: null,
+                claudeError: msg.error ?? null,
+                toolCalls: msg.toolCalls ?? [],
+                activeTools: [],
+              }))
             } else {
               console.log(
                 `[audio] claude: "${(msg.text ?? '').slice(0, 100)}..."`,
               )
+              // Don't set phase to 'done' yet — TTS may follow
+              setState((s) => ({
+                ...s,
+                claudeResponse: msg.text ?? null,
+                claudeError: null,
+                toolCalls: msg.toolCalls ?? [],
+                activeTools: [],
+              }))
             }
-            setState((s) => ({
-              ...s,
-              phase: 'done',
-              claudeResponse: msg.text ?? null,
-              claudeError: msg.error ?? null,
-              toolCalls: msg.toolCalls ?? [],
-              activeTools: [],
-            }))
+            break
+
+          case 'synthesizing':
+            console.log('[audio] synthesizing TTS...')
+            setState((s) => ({ ...s, phase: 'synthesizing' }))
+            break
+
+          case 'tts_audio':
+            console.log(
+              `[audio] TTS audio header: ${msg.format}, ${msg.bytes} B`,
+            )
+            expectingAudioRef.current = true
+            break
+
+          case 'tts_error':
+            console.error(`[audio] TTS error: ${msg.error}`)
+            setState((s) => ({ ...s, phase: 'done' }))
             break
 
           default:
             console.log(`[audio] ${msg.type}`, msg)
         }
       } catch {
-        // Ignore non-JSON messages
+        // Ignore non-JSON text messages
       }
     }
 
@@ -149,10 +238,27 @@ export function useAudioSocket(wsUrl: string | null) {
     }
 
     return () => {
-      ws.close()
-      wsRef.current = null
+      // Only close on true unmount (when component is removed from DOM)
+      // Don't close on hot reload or re-render
+      console.log('[audio] cleanup called - checking if should close')
+      
+      // We'll only actually close if the URL is changing or component unmounting
+      // React will call this again with the new URL if needed
     }
   }, [wsUrl])
+
+  // Separate effect to handle true unmount
+  useEffect(() => {
+    return () => {
+      // This only runs on true unmount
+      if (wsRef.current) {
+        console.log('[audio] component unmounting, closing WebSocket')
+        wsRef.current.close()
+        wsRef.current = null
+        currentUrlRef.current = null
+      }
+    }
+  }, [])
 
   const startRecording = useCallback(async () => {
     const ws = wsRef.current
@@ -174,18 +280,17 @@ export function useAudioSocket(wsUrl: string | null) {
     })
     mediaRecorderRef.current = mediaRecorder
 
-    let chunksSent = 0
+    chunksRef.current = []
     mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
-        chunksSent++
+      if (event.data.size > 0) {
+        chunksRef.current.push(event.data)
         console.log(
-          `[audio] sending chunk #${chunksSent} (${event.data.size} B)`,
+          `[audio] buffered chunk #${chunksRef.current.length} (${event.data.size} B)`,
         )
-        ws.send(event.data)
       }
     }
 
-    console.log('[audio] recording started (250ms chunks)')
+    console.log('[audio] recording started')
     mediaRecorder.start(250)
     setState((s) => ({
       ...s,
@@ -204,6 +309,8 @@ export function useAudioSocket(wsUrl: string | null) {
   const stopRecording = useCallback(() => {
     const mediaRecorder = mediaRecorderRef.current
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      // Request final data then stop
+      mediaRecorder.requestData()
       mediaRecorder.stop()
     }
     mediaRecorderRef.current = null
@@ -218,13 +325,29 @@ export function useAudioSocket(wsUrl: string | null) {
 
     const ws = wsRef.current
     if (ws && ws.readyState === WebSocket.OPEN) {
+      // Combine all chunks into one valid webm blob and send it
+      const chunks = chunksRef.current
+      if (chunks.length > 0) {
+        const mimeType = chunks[0]?.type || 'audio/webm'
+        const blob = new Blob(chunks, { type: mimeType })
+        console.log(
+          `[audio] sending complete recording: ${(blob.size / 1024).toFixed(1)} KB (${chunks.length} chunks)`,
+        )
+        ws.send(blob)
+      }
+      chunksRef.current = []
+
+      // Signal the server to process
       ws.send(JSON.stringify({ type: 'stop' }))
     }
 
     console.log('[audio] recording stopped, requesting transcription')
   }, [])
 
-  const busy = state.phase !== 'idle' && state.phase !== 'done' && state.phase !== 'recording'
+  const busy =
+    state.phase !== 'idle' &&
+    state.phase !== 'done' &&
+    state.phase !== 'recording'
 
   return { ...state, busy, startRecording, stopRecording }
 }

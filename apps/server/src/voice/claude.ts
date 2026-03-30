@@ -15,15 +15,15 @@ function getClient(): Anthropic {
 }
 
 const WORK_DIR = process.env.WORK_DIR ?? process.cwd()
-
 const SYSTEM_PROMPT = `You are a hands-free voice assistant for a software developer. The developer is talking to you through speech-to-text, so their messages may be informal or contain transcription errors — interpret generously.
 
 You have access to tools for reading files, running shell commands, and executing git operations. Use them when the developer asks about code, repos, or system state.
 
 Keep responses concise and conversational — they'll be read back via text-to-speech. Avoid code blocks, markdown formatting, or long lists unless specifically asked. Prefer short, spoken-style answers.
 
-Working directory: ${WORK_DIR}`
+IMPORTANT: Be BRIEF. One or two sentences maximum unless the user explicitly asks for details. Think of this as a quick back-and-forth conversation, not an essay.
 
+Working directory: ${WORK_DIR}`
 const tools: Anthropic.Tool[] = [
   {
     name: 'run_shell',
@@ -124,70 +124,106 @@ export async function chat(
   messages.push({ role: 'user', content: userText })
 
   const toolCalls: ClaudeResponse['toolCalls'] = []
-  let iterations = 0
-  const MAX_ITERATIONS = 10
+  let continueCount = 0
+  const MAX_CONTINUES = 3
 
-  while (iterations < MAX_ITERATIONS) {
-    iterations++
+  while (continueCount <= MAX_CONTINUES) {
+    try {
+      let iterations = 0
+      const MAX_ITERATIONS = 20
 
-    console.log(`[claude] sending request (iteration ${iterations})`)
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      tools,
-      messages,
-    })
+      while (iterations < MAX_ITERATIONS) {
+        iterations++
 
-    messages.push({ role: 'assistant', content: response.content })
-
-    if (response.stop_reason === 'end_turn') {
-      const textBlock = response.content.find(
-        (b): b is Anthropic.TextBlock => b.type === 'text',
-      )
-      const text = textBlock?.text ?? ''
-      console.log(`[claude] response (${iterations} iterations): "${text.slice(0, 100)}${text.length > 100 ? '...' : ''}"`)
-      return { text, toolCalls }
-    }
-
-    if (response.stop_reason === 'tool_use') {
-      const toolUseBlocks = response.content.filter(
-        (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
-      )
-
-      const toolResults: Anthropic.ToolResultBlockParam[] = []
-
-      for (const tool of toolUseBlocks) {
-        const input = tool.input as Record<string, string>
-        const inputStr = JSON.stringify(input)
-        onToolUse?.(tool.name, inputStr)
-
-        const result = executeTool(tool.name, input)
-        const truncated =
-          result.length > 10_000
-            ? `${result.slice(0, 10_000)}\n... (truncated, ${result.length} chars total)`
-            : result
-
-        toolCalls.push({ name: tool.name, input: inputStr, result: truncated })
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: tool.id,
-          content: truncated,
+        console.log(`[claude] sending request (iteration ${iterations}, continue ${continueCount})`)
+        const response = await anthropic.messages.create({
+          model: 'claude-sonnet-4-5',
+          max_tokens: 4096,
+          system: SYSTEM_PROMPT,
+          tools,
+          messages,
         })
+
+        messages.push({ role: 'assistant', content: response.content })
+
+        if (response.stop_reason === 'end_turn') {
+          const textBlock = response.content.find(
+            (b): b is Anthropic.TextBlock => b.type === 'text',
+          )
+          const text = textBlock?.text ?? ''
+          console.log(`[claude] response (${iterations} iterations, ${continueCount} continues): "${text.slice(0, 100)}${text.length > 100 ? '...' : ''}"`)
+          return { text, toolCalls }
+        }
+
+        if (response.stop_reason === 'tool_use') {
+          const toolUseBlocks = response.content.filter(
+            (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
+          )
+
+          const toolResults: Anthropic.ToolResultBlockParam[] = []
+
+          for (const tool of toolUseBlocks) {
+            const input = tool.input as Record<string, string>
+            const inputStr = JSON.stringify(input)
+            onToolUse?.(tool.name, inputStr)
+
+            const result = executeTool(tool.name, input)
+            const truncated =
+              result.length > 10_000
+                ? `${result.slice(0, 10_000)}\n... (truncated, ${result.length} chars total)`
+                : result
+
+            toolCalls.push({ name: tool.name, input: inputStr, result: truncated })
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: tool.id,
+              content: truncated,
+            })
+          }
+
+          messages.push({ role: 'user', content: toolResults })
+          continue
+        }
+
+        // Unexpected stop reason — return what we have
+        const textBlock = response.content.find(
+          (b): b is Anthropic.TextBlock => b.type === 'text',
+        )
+        return { text: textBlock?.text ?? '', toolCalls }
       }
 
-      messages.push({ role: 'user', content: toolResults })
-      continue
-    }
+      return { text: 'I hit the maximum number of tool iterations. Could you try a simpler request?', toolCalls }
 
-    // Unexpected stop reason — return what we have
-    const textBlock = response.content.find(
-      (b): b is Anthropic.TextBlock => b.type === 'text',
-    )
-    return { text: textBlock?.text ?? '', toolCalls }
+    } catch (err) {
+      const error = err as { message?: string; error?: { type?: string; message?: string } }
+      const errorMessage = error.error?.message ?? error.message ?? 'Unknown error'
+      
+      // Check if this is a max iterations error from the API
+      if (errorMessage.includes('maximum number of tool') || 
+          errorMessage.includes('too many tool calls') ||
+          error.error?.type === 'invalid_request_error') {
+        
+        continueCount++
+        console.log(`[claude] hit API tool limit, auto-continuing (${continueCount}/${MAX_CONTINUES})`)
+        
+        if (continueCount > MAX_CONTINUES) {
+          return { 
+            text: `I've made a lot of progress but need to stop here. I completed ${toolCalls.length} operations. Please ask me to continue if you'd like me to finish.`, 
+            toolCalls 
+          }
+        }
+        
+        // Add a continue message and loop again
+        messages.push({ role: 'user', content: 'Please continue with the remaining tasks.' })
+        continue
+      }
+      
+      // Some other error - rethrow it
+      throw err
+    }
   }
 
-  return { text: 'I hit the maximum number of tool iterations. Could you try a simpler request?', toolCalls }
+  return { text: 'Completed the available operations.', toolCalls }
 }
 
 export function clearSession(sessionId: string) {

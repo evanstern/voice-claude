@@ -3,6 +3,7 @@ import type { IncomingMessage, Server } from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { chat } from '../voice/claude.js'
 import { transcribe } from '../voice/stt.js'
+import { synthesize } from '../voice/tts.js'
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -167,6 +168,29 @@ async function handleControl(
           text: response.text,
           toolCalls: response.toolCalls,
         })
+
+        // Phase 3: TTS — synthesize Claude's response to audio
+        if (response.text) {
+          send(ws, { type: 'synthesizing' })
+
+          try {
+            const audioBuffer = await synthesize(response.text)
+            // Send a header so the client knows audio is coming
+            send(ws, {
+              type: 'tts_audio',
+              format: 'mp3',
+              bytes: audioBuffer.byteLength,
+            })
+            // Send the raw audio as binary
+            if (ws.readyState === ws.OPEN) {
+              ws.send(audioBuffer)
+            }
+          } catch (ttsErr) {
+            const ttsMsg = ttsErr instanceof Error ? ttsErr.message : 'Unknown error'
+            console.error(`[ws] tts error  ${ttsMsg}`)
+            send(ws, { type: 'tts_error', error: ttsMsg })
+          }
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error'
         console.error(`[ws] claude error  ${message}`)
