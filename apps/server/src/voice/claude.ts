@@ -358,15 +358,11 @@ export async function chat(
         })
 
         // Log prompt caching stats
-        const usage = response.usage as unknown as Record<
-          string,
-          number | undefined
-        >
-        const cacheRead = usage.cache_read_input_tokens ?? 0
-        const cacheCreation = usage.cache_creation_input_tokens ?? 0
+        const cacheRead = response.usage.cache_read_input_tokens ?? 0
+        const cacheCreation = response.usage.cache_creation_input_tokens ?? 0
         if (cacheRead > 0 || cacheCreation > 0) {
           console.log(
-            `[claude] cache stats: read=${cacheRead} tokens, creation=${cacheCreation} tokens, input=${usage.input_tokens ?? 0} tokens`,
+            `[claude] cache stats: read=${cacheRead} tokens, creation=${cacheCreation} tokens, input=${response.usage.input_tokens} tokens`,
           )
         }
 
@@ -376,11 +372,9 @@ export async function chat(
         accumulatedUsage.input_tokens += response.usage.input_tokens
         accumulatedUsage.output_tokens += response.usage.output_tokens
         accumulatedUsage.cache_creation_input_tokens +=
-          (response.usage as unknown as Record<string, number>)
-            .cache_creation_input_tokens ?? 0
+          response.usage.cache_creation_input_tokens ?? 0
         accumulatedUsage.cache_read_input_tokens +=
-          (response.usage as unknown as Record<string, number>)
-            .cache_read_input_tokens ?? 0
+          response.usage.cache_read_input_tokens ?? 0
 
         if (response.stop_reason === 'end_turn') {
           const textBlock = response.content.find(

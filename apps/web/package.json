@@ -13,19 +13,23 @@
     "typecheck": "react-router typegen && tsc --noEmit"
   },
   "dependencies": {
-    "@voice-claude/contracts": "workspace:*",
-    "@voice-claude/server": "workspace:*",
-    "@voice-claude/ui": "workspace:*",
     "@hono/node-server": "^1.18.1",
     "@react-router/node": "^7.5.0",
     "@react-router/serve": "^7.5.0",
     "@trpc/client": "^11.0.0",
+    "@types/react-syntax-highlighter": "^15.5.13",
+    "@voice-claude/contracts": "workspace:*",
+    "@voice-claude/server": "workspace:*",
+    "@voice-claude/ui": "workspace:*",
     "hono": "^4.6.0",
     "isbot": "^5.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
     "react-router": "^7.5.0",
-    "react-router-hono-server": "~2.21.0"
+    "react-router-hono-server": "~2.21.0",
+    "react-syntax-highlighter": "^16.1.1",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@hono/vite-dev-server": "^0.19.0",

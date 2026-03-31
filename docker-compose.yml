@@ -18,7 +18,6 @@ services:
       - /app/apps/server/node_modules
       - /app/apps/web/node_modules
       - /app/packages/contracts/node_modules
-      - /app/packages/shared/node_modules
       - /app/packages/ui/node_modules
     depends_on:
       - piper
@@ -39,7 +38,6 @@ services:
       - /app/apps/server/node_modules
       - /app/apps/web/node_modules
       - /app/packages/contracts/node_modules
-      - /app/packages/shared/node_modules
       - /app/packages/ui/node_modules
     depends_on:
       - server
