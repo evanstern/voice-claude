@@ -407,5 +407,8 @@ export function useAudioSocket(wsUrl: string | null) {
     state.phase !== 'done' &&
     state.phase !== 'recording'
 
-  return { ...state, busy, startRecording, stopRecording, sendConversation }
+  // Expose the mic stream so VAD can attach to it
+  const micStream = streamRef.current
+
+  return { ...state, busy, startRecording, stopRecording, micStream }
 }
