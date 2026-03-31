@@ -1,5 +1,3 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useOutletContext } from 'react-router'
 import {
   Card,
   CardContent,
@@ -7,6 +5,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@voice-claude/ui/components/card'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link, useOutletContext } from 'react-router'
 import { getClientTRPC } from '../trpc/client.js'
 
 interface RootContext {
@@ -68,7 +68,12 @@ function formatDuration(seconds: number): string {
   return `${mins}m ${secs.toFixed(0)}s`
 }
 
-function CostBar({ label, cost, total, color }: {
+function CostBar({
+  label,
+  cost,
+  total,
+  color,
+}: {
   label: string
   cost: number
   total: number
@@ -79,7 +84,9 @@ function CostBar({ label, cost, total, color }: {
     <div className="space-y-1">
       <div className="flex items-center justify-between text-sm">
         <span className="text-muted-foreground">{label}</span>
-        <span className="font-mono font-medium text-foreground">{formatCost(cost)}</span>
+        <span className="font-mono font-medium text-foreground">
+          {formatCost(cost)}
+        </span>
       </div>
       <div className="h-2 rounded-full bg-muted overflow-hidden">
         <div
@@ -130,9 +137,19 @@ export default function Costs() {
             to="/"
             className="text-muted-foreground hover:text-foreground transition-colors p-1 -ml-1"
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={1.5}
+              stroke="currentColor"
+            >
               <title>Back</title>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M15.75 19.5L8.25 12l7.5-7.5"
+              />
             </svg>
           </Link>
           <h1 className="text-lg font-semibold tracking-tight text-foreground">
@@ -175,7 +192,10 @@ export default function Costs() {
                 <div className="flex gap-4 text-sm text-muted-foreground">
                   <span>{stats.totalInteractions} interactions</span>
                   <span className="text-border">|</span>
-                  <span>{stats.activeSessions} active session{stats.activeSessions !== 1 ? 's' : ''}</span>
+                  <span>
+                    {stats.activeSessions} active session
+                    {stats.activeSessions !== 1 ? 's' : ''}
+                  </span>
                   <span className="text-border">|</span>
                   <span>{formatCost(stats.avgCostPerInteraction)} avg</span>
                 </div>
@@ -186,7 +206,9 @@ export default function Costs() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Cost by Service</CardTitle>
-                <CardDescription>Breakdown across API providers</CardDescription>
+                <CardDescription>
+                  Breakdown across API providers
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <CostBar
@@ -221,29 +243,47 @@ export default function Costs() {
                   <div className="space-y-3">
                     <div>
                       <p className="text-muted-foreground">STT Duration</p>
-                      <p className="font-mono font-medium">{formatDuration(stats.usage.sttDurationSec)}</p>
+                      <p className="font-mono font-medium">
+                        {formatDuration(stats.usage.sttDurationSec)}
+                      </p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Claude Input Tokens</p>
-                      <p className="font-mono font-medium">{formatNumber(stats.usage.claudeInputTokens)}</p>
+                      <p className="text-muted-foreground">
+                        Claude Input Tokens
+                      </p>
+                      <p className="font-mono font-medium">
+                        {formatNumber(stats.usage.claudeInputTokens)}
+                      </p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Claude Output Tokens</p>
-                      <p className="font-mono font-medium">{formatNumber(stats.usage.claudeOutputTokens)}</p>
+                      <p className="text-muted-foreground">
+                        Claude Output Tokens
+                      </p>
+                      <p className="font-mono font-medium">
+                        {formatNumber(stats.usage.claudeOutputTokens)}
+                      </p>
                     </div>
                   </div>
                   <div className="space-y-3">
                     <div>
                       <p className="text-muted-foreground">TTS Characters</p>
-                      <p className="font-mono font-medium">{formatNumber(stats.usage.ttsChars)}</p>
+                      <p className="font-mono font-medium">
+                        {formatNumber(stats.usage.ttsChars)}
+                      </p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Cache Read Tokens</p>
-                      <p className="font-mono font-medium">{formatNumber(stats.usage.claudeCacheReadTokens)}</p>
+                      <p className="font-mono font-medium">
+                        {formatNumber(stats.usage.claudeCacheReadTokens)}
+                      </p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Cache Write Tokens</p>
-                      <p className="font-mono font-medium">{formatNumber(stats.usage.claudeCacheWriteTokens)}</p>
+                      <p className="text-muted-foreground">
+                        Cache Write Tokens
+                      </p>
+                      <p className="font-mono font-medium">
+                        {formatNumber(stats.usage.claudeCacheWriteTokens)}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -255,7 +295,10 @@ export default function Costs() {
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">Active Sessions</CardTitle>
-                  <CardDescription>{stats.sessions.length} session{stats.sessions.length !== 1 ? 's' : ''} with tracked costs</CardDescription>
+                  <CardDescription>
+                    {stats.sessions.length} session
+                    {stats.sessions.length !== 1 ? 's' : ''} with tracked costs
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
@@ -265,17 +308,28 @@ export default function Costs() {
                         className="flex items-center justify-between py-2 border-b border-border last:border-0"
                       >
                         <div>
-                          <p className="font-mono text-sm text-foreground">{session.sessionId}</p>
+                          <p className="font-mono text-sm text-foreground">
+                            {session.sessionId}
+                          </p>
                           <p className="text-xs text-muted-foreground">
-                            {session.interactions} interaction{session.interactions !== 1 ? 's' : ''}
+                            {session.interactions} interaction
+                            {session.interactions !== 1 ? 's' : ''}
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="font-mono text-sm font-medium">{formatCost(session.totalCost)}</p>
+                          <p className="font-mono text-sm font-medium">
+                            {formatCost(session.totalCost)}
+                          </p>
                           <div className="flex gap-2 text-[10px] text-muted-foreground">
-                            <span className="text-violet-400">C:{formatCost(session.costs.claude)}</span>
-                            <span className="text-emerald-400">S:{formatCost(session.costs.stt)}</span>
-                            <span className="text-amber-400">T:{formatCost(session.costs.tts)}</span>
+                            <span className="text-violet-400">
+                              C:{formatCost(session.costs.claude)}
+                            </span>
+                            <span className="text-emerald-400">
+                              S:{formatCost(session.costs.stt)}
+                            </span>
+                            <span className="text-amber-400">
+                              T:{formatCost(session.costs.tts)}
+                            </span>
                           </div>
                         </div>
                       </div>

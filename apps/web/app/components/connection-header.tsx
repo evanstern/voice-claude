@@ -58,7 +58,11 @@ export function ConnectionHeader({
             }`}
           />
           <span className="text-xs text-muted-foreground">
-            {allGood ? 'Connected' : !wsConnected ? 'WS offline' : 'API offline'}
+            {allGood
+              ? 'Connected'
+              : !wsConnected
+                ? 'WS offline'
+                : 'API offline'}
           </span>
         </div>
       </div>
