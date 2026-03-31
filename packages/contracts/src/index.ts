@@ -60,3 +60,94 @@ export type ControlMessage = z.infer<typeof controlMessage>
 export const clientWsMessage = z.union([setConversationMessage, controlMessage])
 
 export type ClientWsMessage = z.infer<typeof clientWsMessage>
+
+// ── Server → Client WebSocket Messages ────────────────────────
+
+export const audioAckMessage = z.object({
+  type: z.literal('audio_ack'),
+  chunk: z.number(),
+  bytes: z.number(),
+  totalBytes: z.number(),
+})
+
+export type AudioAckMessage = z.infer<typeof audioAckMessage>
+
+export const transcribingMessage = z.object({
+  type: z.literal('transcribing'),
+  bytes: z.number(),
+})
+
+export type TranscribingMessage = z.infer<typeof transcribingMessage>
+
+export const transcriptionMessage = z.object({
+  type: z.literal('transcription'),
+  text: z.string().optional(),
+  error: z.string().optional(),
+})
+
+export type TranscriptionMessage = z.infer<typeof transcriptionMessage>
+
+export const thinkingMessage = z.object({
+  type: z.literal('thinking'),
+})
+
+export type ThinkingMessage = z.infer<typeof thinkingMessage>
+
+export const toolUseMessage = z.object({
+  type: z.literal('tool_use'),
+  name: z.string(),
+})
+
+export type ToolUseMessage = z.infer<typeof toolUseMessage>
+
+export const claudeResponseMessage = z.object({
+  type: z.literal('claude_response'),
+  text: z.string().optional(),
+  error: z.string().optional(),
+  toolCalls: z.array(toolCallSchema).optional(),
+})
+
+export type ClaudeResponseMessage = z.infer<typeof claudeResponseMessage>
+
+export const synthesizingMessage = z.object({
+  type: z.literal('synthesizing'),
+})
+
+export type SynthesizingMessage = z.infer<typeof synthesizingMessage>
+
+export const ttsAudioMessage = z.object({
+  type: z.literal('tts_audio'),
+  format: z.string(),
+  bytes: z.number(),
+})
+
+export type TtsAudioMessage = z.infer<typeof ttsAudioMessage>
+
+export const ttsErrorMessage = z.object({
+  type: z.literal('tts_error'),
+  error: z.string(),
+})
+
+export type TtsErrorMessage = z.infer<typeof ttsErrorMessage>
+
+export const commandMessage = z.object({
+  type: z.literal('command'),
+  command: z.string(),
+})
+
+export type CommandMessage = z.infer<typeof commandMessage>
+
+export const serverWsMessage = z.discriminatedUnion('type', [
+  audioAckMessage,
+  transcribingMessage,
+  transcriptionMessage,
+  thinkingMessage,
+  toolUseMessage,
+  claudeResponseMessage,
+  synthesizingMessage,
+  ttsAudioMessage,
+  ttsErrorMessage,
+  commandMessage,
+])
+
+export type ServerWsMessage = z.infer<typeof serverWsMessage>
