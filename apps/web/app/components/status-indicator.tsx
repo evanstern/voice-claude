@@ -73,9 +73,7 @@ export function StatusIndicator({ phase, activeTools }: StatusIndicatorProps) {
               className={`absolute inset-0 rounded-full opacity-40 animate-ping ${colorClass}`}
             />
           )}
-          <div
-            className={`w-2 h-2 rounded-full animate-pulse ${colorClass}`}
-          />
+          <div className={`w-2 h-2 rounded-full animate-pulse ${colorClass}`} />
         </div>
         <span className="text-sm text-muted-foreground">{label}</span>
         {showTimer && elapsed >= 3 && (
