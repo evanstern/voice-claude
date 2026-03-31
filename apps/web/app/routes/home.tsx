@@ -305,16 +305,12 @@ export default function Home() {
     refreshConversations,
   ])
 
-  // Auto-scroll to bottom
-  const scrollToBottom = useCallback(() => {
+  // Auto-scroll to bottom when conversation changes (e.g. loading from menu)
+  useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, [])
-
-  useEffect(() => {
-    scrollToBottom()
-  }, [scrollToBottom, conversation])
+  }, [conversation])
 
   // Play audio cues on phase transitions
   const prevPhaseForSoundRef = useRef(audio.phase)
