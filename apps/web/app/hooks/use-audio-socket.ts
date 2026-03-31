@@ -39,9 +39,10 @@ interface AudioSocketState {
   commandNotice: string | null
 }
 
-function playAudio(data: ArrayBuffer): Promise<void> {
+function playAudio(data: ArrayBuffer, format = 'mp3'): Promise<void> {
   return new Promise((resolve, reject) => {
-    const blob = new Blob([data], { type: 'audio/mpeg' })
+    const mimeType = format === 'ogg_opus' ? 'audio/ogg' : 'audio/mpeg'
+    const blob = new Blob([data], { type: mimeType })
     const url = URL.createObjectURL(blob)
     const audio = new Audio(url)
     audio.onended = () => {
@@ -63,6 +64,7 @@ export function useAudioSocket(wsUrl: string | null) {
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const expectingAudioRef = useRef(false)
+  const audioFormatRef = useRef('mp3')
   const audioPlaybackRef = useRef<Promise<void> | null>(null)
 
   const [state, setState] = useState<AudioSocketState>({
@@ -118,7 +120,7 @@ export function useAudioSocket(wsUrl: string | null) {
         console.log(`[audio] received TTS audio: ${(bytes / 1024).toFixed(1)} KB`)
 
         setState((s) => ({ ...s, phase: 'speaking' }))
-        const playbackPromise = playAudio(event.data)
+        const playbackPromise = playAudio(event.data, audioFormatRef.current)
           .then(() => {
             console.log('[audio] playback complete')
             setState((s) => ({ ...s, phase: 'done' }))
@@ -217,6 +219,7 @@ export function useAudioSocket(wsUrl: string | null) {
               `[audio] TTS audio header: ${msg.format}, ${msg.bytes} B`,
             )
             expectingAudioRef.current = true
+            audioFormatRef.current = msg.format ?? 'mp3'
             break
 
           case 'tts_error':
@@ -383,10 +386,26 @@ export function useAudioSocket(wsUrl: string | null) {
     console.log('[audio] recording stopped, requesting transcription')
   }, [])
 
+  const sendConversation = useCallback(
+    (conversationId: string | null, isFirstMessage: boolean) => {
+      const ws = wsRef.current
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(
+          JSON.stringify({
+            type: 'set_conversation',
+            conversationId,
+            isFirstMessage,
+          }),
+        )
+      }
+    },
+    [],
+  )
+
   const busy =
     state.phase !== 'idle' &&
     state.phase !== 'done' &&
     state.phase !== 'recording'
 
-  return { ...state, busy, startRecording, stopRecording }
+  return { ...state, busy, startRecording, stopRecording, sendConversation }
 }

@@ -235,7 +235,7 @@ export async function chat(
         })
 
         // Log prompt caching stats
-        const usage = response.usage as Record<string, number | undefined>
+        const usage = response.usage as unknown as Record<string, number | undefined>
         const cacheRead = usage.cache_read_input_tokens ?? 0
         const cacheCreation = usage.cache_creation_input_tokens ?? 0
         if (cacheRead > 0 || cacheCreation > 0) {
@@ -312,7 +312,7 @@ export async function chat(
         const textBlock = response.content.find(
           (b): b is Anthropic.TextBlock => b.type === 'text',
         )
-        return { text: textBlock?.text ?? '', toolCalls, usage: accumulatedUsage }
+        return { text: textBlock?.text ?? '', toolCalls, usage: accumulatedUsage, model }
       }
 
       return { text: 'I hit the maximum number of tool iterations. Could you try a simpler request?', toolCalls, usage: accumulatedUsage , model }
@@ -334,6 +334,7 @@ export async function chat(
             text: `I've made a lot of progress but need to stop here. I completed ${toolCalls.length} operations. Please ask me to continue if you'd like me to finish.`,
             toolCalls,
             usage: accumulatedUsage,
+            model,
           }
         }
 
