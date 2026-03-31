@@ -119,6 +119,59 @@ function pickModel(sessionId: string, userText: string): string {
 // --- End model routing ---
 
 const WORK_DIR = process.env.WORK_DIR ?? process.cwd()
+
+// --- Command blocklist ---
+
+const BLOCKED_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
+  {
+    pattern: /rm\s+-[^\s]*r[^\s]*f[^\s]*\s+\/\s*$/,
+    reason: 'Refusing to rm -rf /',
+  },
+  {
+    pattern: /rm\s+-[^\s]*r[^\s]*f[^\s]*\s+~\s*$/,
+    reason: 'Refusing to rm -rf home directory',
+  },
+  { pattern: /\bsudo\b/, reason: 'sudo is not allowed' },
+  {
+    pattern: /\b(curl|wget)\b.*\|\s*(sh|bash|zsh)\b/,
+    reason: 'Piped remote execution is not allowed',
+  },
+  {
+    pattern: /(^|\||\;|\&\&)\s*eval\s/,
+    reason: 'eval is not allowed',
+  },
+  {
+    pattern: /(^|\||\;|\&\&)\s*exec\s/,
+    reason: 'exec is not allowed',
+  },
+  { pattern: /\bmkfs\b/, reason: 'mkfs is not allowed' },
+  { pattern: /\bdd\s+if=/, reason: 'dd is not allowed' },
+  {
+    pattern: /:\(\)\s*\{\s*:\|:\s*&\s*\}\s*;?\s*:/,
+    reason: 'Fork bomb detected',
+  },
+  {
+    pattern: /\bchmod\s+777\s+\//,
+    reason: 'chmod 777 on system paths is not allowed',
+  },
+  {
+    pattern: /\bchown\b.*\s+\/(bin|sbin|usr|etc|var|lib|boot|sys|proc|dev)\b/,
+    reason: 'chown on system paths is not allowed',
+  },
+  {
+    pattern: /^\s*>/,
+    reason: 'Truncating files with > redirection is not allowed',
+  },
+]
+
+function isCommandBlocked(cmd: string): string | null {
+  for (const { pattern, reason } of BLOCKED_PATTERNS) {
+    if (pattern.test(cmd)) {
+      return reason
+    }
+  }
+  return null
+}
 const SYSTEM_PROMPT = `You are a hands-free voice coding assistant called Voice Claude. You run as a web app that the user accesses from their phone or computer. You can hear them speak through their microphone — their speech is transcribed and sent to you. Your responses are spoken back to them via text-to-speech. This is a live, real-time voice conversation.
 
 When the user says things like "can you hear me" or "are you there", respond naturally — you can hear them. If they ask what you are, explain that you're a voice interface for Claude that can help with coding tasks hands-free.
@@ -178,6 +231,11 @@ async function executeTool(
     case 'run_shell': {
       const cmd = input.command ?? ''
       console.log(`[claude] tool run_shell: ${cmd}`)
+      const blocked = isCommandBlocked(cmd)
+      if (blocked) {
+        console.log(`[claude] blocked command: ${cmd}`)
+        return `Error: ${blocked}`
+      }
       try {
         const { stdout } = await execAsync(cmd, {
           cwd: WORK_DIR,
