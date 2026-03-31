@@ -144,7 +144,6 @@ export default function Home() {
   }, [trpc, refreshConversations, navigate])
 
   // Load conversation data when activeConversationId changes (URL-driven)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: audio.sendConversation is a stable useCallback
   useEffect(() => {
     let cancelled = false
 
@@ -214,8 +213,7 @@ export default function Home() {
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- audio.sendConversation is a stable useCallback
-  }, [activeConversationId, trpc, navigate])
+  }, [activeConversationId, trpc, navigate, audio.sendConversation])
 
   // Delete conversation
   const deleteConversation = useCallback(
