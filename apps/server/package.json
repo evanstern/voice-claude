@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
+    "@google-cloud/text-to-speech": "^6.0.0",
     "@voice-claude/contracts": "workspace:^",
     "@hono/node-server": "^1.13.0",
     "@trpc/server": "^11.0.0",

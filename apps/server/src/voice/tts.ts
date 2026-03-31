@@ -1,35 +1,39 @@
-import { getOpenAIClient } from './openai.js'
+import type { TTSProvider } from './tts-provider.js'
 
-type Voice = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
+const PROVIDERS: Record<string, () => Promise<TTSProvider>> = {
+  openai: async () => {
+    const { OpenAITTSProvider } = await import('./openai-tts.js')
+    return new OpenAITTSProvider()
+  },
+  google: async () => {
+    const { GoogleTTSProvider } = await import('./google-tts.js')
+    return new GoogleTTSProvider()
+  },
+}
 
-const DEFAULT_VOICE: Voice = 'nova'
+let cachedProvider: TTSProvider | null = null
 
-export async function synthesize(
-  text: string,
-  voice?: Voice,
-): Promise<Buffer> {
-  const openai = getOpenAIClient()
-  const selectedVoice = voice ?? (process.env.TTS_VOICE as Voice) ?? DEFAULT_VOICE
+export async function getTTSProvider(): Promise<TTSProvider> {
+  if (!cachedProvider) {
+    const name = process.env.TTS_PROVIDER ?? 'openai'
+    const factory = PROVIDERS[name]
+    if (!factory) {
+      throw new Error(
+        `Unknown TTS provider: "${name}". Supported: ${Object.keys(PROVIDERS).join(', ')}`,
+      )
+    }
+    cachedProvider = await factory()
+    console.log(`[tts] using provider: ${cachedProvider.name}`)
+  }
+  return cachedProvider
+}
 
-  console.log(
-    `[tts] synthesizing ${text.length} chars with voice="${selectedVoice}"`,
-  )
-  const start = Date.now()
+export function getAudioFormat(): string {
+  return cachedProvider?.defaultFormat ?? 'mp3'
+}
 
-  const response = await openai.audio.speech.create({
-    model: 'tts-1',
-    voice: selectedVoice,
-    input: text,
-    response_format: 'mp3',
-  })
-
-  const arrayBuffer = await response.arrayBuffer()
-  const buffer = Buffer.from(arrayBuffer)
-
-  const elapsed = Date.now() - start
-  console.log(
-    `[tts] done (${elapsed}ms): ${(buffer.byteLength / 1024).toFixed(1)} KB mp3`,
-  )
-
-  return buffer
+/** Backward-compatible convenience export */
+export async function synthesize(text: string): Promise<Buffer> {
+  const provider = await getTTSProvider()
+  return provider.synthesize(text)
 }

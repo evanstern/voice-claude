@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, Server } from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
+import {
+  appendMessage,
+  autoTitle,
+} from '../storage/conversations.js'
 import { chat, clearSession } from '../voice/claude.js'
 import { parseCommand } from '../voice/commands.js'
 import {
@@ -11,7 +15,7 @@ import {
 } from '../voice/cost-tracker.js'
 import { transcribe } from '../voice/stt.js'
 import { filterForTTS } from '../voice/text-filter.js'
-import { synthesize } from '../voice/tts.js'
+import { getTTSProvider } from '../voice/tts.js'
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -42,6 +46,8 @@ export function attachWebSocket(httpServer: Server) {
     let totalBytes = 0
     let streamStartedAt: number | null = null
     let audioChunks: Buffer[] = []
+    let conversationId: string | null = null
+    let isFirstMessage = true
 
     console.log(`[ws] connected  client=${client} session=${sessionId.slice(0, 8)}`)
 
@@ -49,10 +55,25 @@ export function attachWebSocket(httpServer: Server) {
       if (!isBinary) {
         try {
           const msg = JSON.parse(data.toString())
+
+          // Handle conversation assignment
+          if (msg.type === 'set_conversation') {
+            conversationId = msg.conversationId ?? null
+            isFirstMessage = msg.isFirstMessage ?? true
+            console.log(`[ws] conversation set to ${conversationId?.slice(0, 8) ?? 'none'}`)
+            send(ws, { type: 'conversation_set', conversationId })
+            return
+          }
+
           handleControl(ws, sessionId, msg, () => ({
             audioChunks,
             resetAudio: () => {
               audioChunks = []
+            },
+            conversationId,
+            isFirstMessage,
+            setFirstMessage: (val: boolean) => {
+              isFirstMessage = val
             },
           }))
         } catch {
@@ -127,7 +148,13 @@ async function handleControl(
   ws: WebSocket,
   sessionId: string,
   msg: Record<string, unknown>,
-  getAudioState: () => { audioChunks: Buffer[]; resetAudio: () => void },
+  getAudioState: () => {
+    audioChunks: Buffer[]
+    resetAudio: () => void
+    conversationId: string | null
+    isFirstMessage: boolean
+    setFirstMessage: (val: boolean) => void
+  },
 ) {
   console.log(`[ws] control    type=${msg.type}`)
 
@@ -137,7 +164,7 @@ async function handleControl(
       break
 
     case 'stop': {
-      const { audioChunks, resetAudio } = getAudioState()
+      const { audioChunks, resetAudio, conversationId, isFirstMessage, setFirstMessage } = getAudioState()
       if (audioChunks.length === 0) {
         send(ws, { type: 'transcription', text: '', error: 'No audio received' })
         break
@@ -186,6 +213,15 @@ async function handleControl(
 
       if (!userText) break
 
+      // Persist user message
+      if (conversationId) {
+        appendMessage(conversationId, { role: 'user', content: userText })
+        if (isFirstMessage) {
+          autoTitle(conversationId, userText)
+          setFirstMessage(false)
+        }
+      }
+
       // Phase 2: Send to Claude
       send(ws, { type: 'thinking' })
 
@@ -195,6 +231,16 @@ async function handleControl(
         })
 
         recordClaude(sessionId, response.usage)
+
+        // Persist assistant message
+        if (conversationId) {
+          appendMessage(conversationId, {
+            role: 'assistant',
+            content: response.text ?? '',
+            toolCalls: response.toolCalls,
+            error: undefined,
+          })
+        }
 
         send(ws, {
           type: 'claude_response',
@@ -211,11 +257,11 @@ async function handleControl(
 
           try {
             recordTTS(sessionId, spokenText.length)
-            const audioBuffer = await synthesize(spokenText)
-            // Send a header so the client knows audio is coming
+            const ttsProvider = await getTTSProvider()
+            const audioBuffer = await ttsProvider.synthesize(spokenText)
             send(ws, {
               type: 'tts_audio',
-              format: 'mp3',
+              format: ttsProvider.defaultFormat,
               bytes: audioBuffer.byteLength,
             })
             // Send the raw audio as binary
