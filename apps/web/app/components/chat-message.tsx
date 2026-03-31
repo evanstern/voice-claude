@@ -5,7 +5,7 @@ interface ToolCall {
 }
 
 interface ChatMessageProps {
-  role: 'user' | 'assistant'
+  sender: 'user' | 'assistant'
   content: string
   error?: string | null
   toolCalls?: ToolCall[]
@@ -32,12 +32,12 @@ function ToolCallBadge({ toolCall }: { toolCall: ToolCall }) {
 }
 
 export function ChatMessage({
-  role,
+  sender,
   content,
   error,
   toolCalls,
 }: ChatMessageProps) {
-  const isUser = role === 'user'
+  const isUser = sender === 'user'
 
   return (
     <div

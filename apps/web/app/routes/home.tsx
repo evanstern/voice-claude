@@ -439,14 +439,14 @@ export default function Home() {
             <div key={entry.id} className="flex flex-col gap-3">
               {(entry.userText || entry.userError) && (
                 <ChatMessage
-                  role="user"
+                  sender="user"
                   content={entry.userText || 'No speech detected'}
                   error={entry.userError}
                 />
               )}
               {(entry.assistantText || entry.assistantError) && (
                 <ChatMessage
-                  role="assistant"
+                  sender="assistant"
                   content={entry.assistantText ?? ''}
                   error={entry.assistantError}
                   toolCalls={entry.toolCalls}
@@ -458,7 +458,7 @@ export default function Home() {
           {pendingEntry && (
             <div className="flex flex-col gap-3">
               <ChatMessage
-                role="user"
+                sender="user"
                 content={pendingEntry.userText || 'No speech detected'}
                 error={pendingEntry.userError}
               />
