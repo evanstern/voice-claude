@@ -150,7 +150,7 @@ function playCommandAcknowledged(ctx: AudioContext) {
     const gain = ctx.createGain()
     const start = now + i * 0.09
     osc.type = 'sine'
-    osc.frequency.value = notes[i]
+    osc.frequency.value = notes[i] ?? 0
     gain.gain.setValueAtTime(0, start)
     gain.gain.linearRampToValueAtTime(0.12, start + 0.02)
     gain.gain.linearRampToValueAtTime(0, start + 0.08)
