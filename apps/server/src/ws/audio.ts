@@ -9,6 +9,7 @@ import {
 import { chat, clearSession, restoreSession } from '../voice/claude.js'
 import { parseCommand } from '../voice/commands.js'
 import {
+  cleanupSession,
   finalizeInteraction,
   recordClaude,
   recordSTT,
@@ -29,6 +30,8 @@ function elapsed(startMs: number): string {
   if (sec < 60) return `${sec.toFixed(1)}s`
   return `${Math.floor(sec / 60)}m ${(sec % 60).toFixed(0)}s`
 }
+
+const MAX_AUDIO_BUFFER_BYTES = 10 * 1024 * 1024 // 10 MB
 
 function send(ws: WebSocket, msg: Record<string, unknown>) {
   if (ws.readyState === ws.OPEN) {
@@ -114,6 +117,21 @@ export function attachWebSocket(httpServer: Server) {
       totalBytes += bytes
       audioChunks.push(chunk)
 
+      // Enforce max buffer size to prevent memory exhaustion
+      if (totalBytes > MAX_AUDIO_BUFFER_BYTES) {
+        console.warn(
+          `[ws] audio buffer exceeded ${formatBytes(MAX_AUDIO_BUFFER_BYTES)} — clearing`,
+        )
+        audioChunks = []
+        totalBytes = 0
+        chunkCount = 0
+        send(ws, {
+          type: 'error',
+          error: 'Audio buffer exceeded 10 MB limit. Recording cleared.',
+        })
+        return
+      }
+
       console.log(
         `[ws] chunk #${String(chunkCount).padStart(4)}  ` +
           `size=${formatBytes(bytes).padStart(8)}  ` +
@@ -140,6 +158,11 @@ export function attachWebSocket(httpServer: Server) {
       console.log(
         `[ws] ─── session summary ───────────────────\n[ws]   connection duration : ${duration}\n[ws]   stream duration     : ${streamDuration}\n[ws]   chunks received     : ${chunkCount}\n[ws]   total data          : ${formatBytes(totalBytes)}\n[ws]   avg chunk size      : ${avgChunkSize}\n[ws] ──────────────────────────────────────`,
       )
+
+      // Clean up server-side state for this session
+      audioChunks = []
+      clearSession(sessionId)
+      cleanupSession(sessionId)
     })
 
     ws.on('error', (err) => {
@@ -193,8 +216,12 @@ async function handleControl(
         break
       }
 
-      const combined = Buffer.concat(audioChunks)
-      resetAudio()
+      let combined: Buffer
+      try {
+        combined = Buffer.concat(audioChunks)
+      } finally {
+        resetAudio()
+      }
 
       // Phase 1: Transcribe
       send(ws, { type: 'transcribing', bytes: combined.byteLength })
