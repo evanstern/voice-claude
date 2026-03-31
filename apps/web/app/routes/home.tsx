@@ -213,7 +213,8 @@ export default function Home() {
     return () => {
       cancelled = true
     }
-  }, [activeConversationId, trpc, audio, navigate])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- audio.sendConversation is a stable useCallback
+  }, [activeConversationId, trpc, navigate])
 
   // Delete conversation
   const deleteConversation = useCallback(
