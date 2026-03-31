@@ -1,24 +1,33 @@
 import { randomUUID } from 'node:crypto'
 import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs'
+  access,
+  appendFile,
+  mkdir,
+  readFile,
+  unlink,
+  writeFile,
+} from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ConversationSummary, Message } from '@voice-claude/contracts'
 
 const DATA_DIR = join(process.cwd(), 'data', 'conversations')
 const INDEX_FILE = join(DATA_DIR, 'index.jsonl')
 
-function ensureDataDir() {
-  if (!existsSync(DATA_DIR)) {
-    mkdirSync(DATA_DIR, { recursive: true })
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath)
+    return true
+  } catch {
+    return false
   }
-  if (!existsSync(INDEX_FILE)) {
-    writeFileSync(INDEX_FILE, '')
+}
+
+async function ensureDataDir() {
+  if (!(await fileExists(DATA_DIR))) {
+    await mkdir(DATA_DIR, { recursive: true })
+  }
+  if (!(await fileExists(INDEX_FILE))) {
+    await writeFile(INDEX_FILE, '')
   }
 }
 
@@ -26,19 +35,19 @@ function convFile(id: string): string {
   return join(DATA_DIR, `conv_${id}.jsonl`)
 }
 
-function readJsonlLines<T>(filePath: string): T[] {
-  if (!existsSync(filePath)) return []
-  const content = readFileSync(filePath, 'utf-8').trim()
+async function readJsonlLines<T>(filePath: string): Promise<T[]> {
+  if (!(await fileExists(filePath))) return []
+  const content = (await readFile(filePath, 'utf-8')).trim()
   if (!content) return []
   return content.split('\n').map((line) => JSON.parse(line) as T)
 }
 
-function appendJsonl(filePath: string, obj: unknown) {
-  appendFileSync(filePath, `${JSON.stringify(obj)}\n`)
+async function appendJsonl(filePath: string, obj: unknown) {
+  await appendFile(filePath, `${JSON.stringify(obj)}\n`)
 }
 
-function rewriteIndex(entries: ConversationSummary[]) {
-  writeFileSync(
+async function rewriteIndex(entries: ConversationSummary[]) {
+  await writeFile(
     INDEX_FILE,
     entries.map((e) => JSON.stringify(e)).join('\n') +
       (entries.length ? '\n' : ''),
@@ -47,15 +56,17 @@ function rewriteIndex(entries: ConversationSummary[]) {
 
 // ── Public API ──────────────────────────────────────────────────
 
-export function listConversations(): ConversationSummary[] {
-  ensureDataDir()
-  return readJsonlLines<ConversationSummary>(INDEX_FILE).sort(
+export async function listConversations(): Promise<ConversationSummary[]> {
+  await ensureDataDir()
+  return (await readJsonlLines<ConversationSummary>(INDEX_FILE)).sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
   )
 }
 
-export function createConversation(title?: string): ConversationSummary {
-  ensureDataDir()
+export async function createConversation(
+  title?: string,
+): Promise<ConversationSummary> {
+  await ensureDataDir()
   const now = new Date().toISOString()
   const summary: ConversationSummary = {
     id: randomUUID(),
@@ -64,72 +75,79 @@ export function createConversation(title?: string): ConversationSummary {
     updatedAt: now,
     messageCount: 0,
   }
-  appendJsonl(INDEX_FILE, summary)
-  writeFileSync(convFile(summary.id), '')
+  await appendJsonl(INDEX_FILE, summary)
+  await writeFile(convFile(summary.id), '')
   return summary
 }
 
-export function getConversation(
+export async function getConversation(
   id: string,
-): { summary: ConversationSummary; messages: Message[] } | null {
-  ensureDataDir()
-  const entries = readJsonlLines<ConversationSummary>(INDEX_FILE)
+): Promise<{ summary: ConversationSummary; messages: Message[] } | null> {
+  await ensureDataDir()
+  const entries = await readJsonlLines<ConversationSummary>(INDEX_FILE)
   const summary = entries.find((e) => e.id === id)
   if (!summary) return null
-  const messages = readJsonlLines<Message>(convFile(id))
+  const messages = await readJsonlLines<Message>(convFile(id))
   return { summary, messages }
 }
 
-export function appendMessage(
+export async function appendMessage(
   conversationId: string,
   message: Omit<Message, 'id' | 'timestamp'>,
-): Message {
-  ensureDataDir()
+): Promise<Message> {
+  await ensureDataDir()
   const full: Message = {
     ...message,
     id: randomUUID(),
     timestamp: new Date().toISOString(),
   }
-  appendJsonl(convFile(conversationId), full)
+  await appendJsonl(convFile(conversationId), full)
 
   // Update index entry
-  const entries = readJsonlLines<ConversationSummary>(INDEX_FILE)
+  const entries = await readJsonlLines<ConversationSummary>(INDEX_FILE)
   const idx = entries.findIndex((e) => e.id === conversationId)
   const entry = entries[idx]
   if (entry) {
     entry.messageCount++
     entry.updatedAt = full.timestamp
-    rewriteIndex(entries)
+    await rewriteIndex(entries)
   }
 
   return full
 }
 
-export function deleteConversation(id: string): boolean {
-  ensureDataDir()
-  const entries = readJsonlLines<ConversationSummary>(INDEX_FILE)
+export async function deleteConversation(id: string): Promise<boolean> {
+  await ensureDataDir()
+  const entries = await readJsonlLines<ConversationSummary>(INDEX_FILE)
   const filtered = entries.filter((e) => e.id !== id)
   if (filtered.length === entries.length) return false
-  rewriteIndex(filtered)
+  await rewriteIndex(filtered)
   const file = convFile(id)
-  if (existsSync(file)) unlinkSync(file)
+  if (await fileExists(file)) await unlink(file)
   return true
 }
 
-export function updateConversationTitle(id: string, title: string): boolean {
-  ensureDataDir()
-  const entries = readJsonlLines<ConversationSummary>(INDEX_FILE)
+export async function updateConversationTitle(
+  id: string,
+  title: string,
+): Promise<boolean> {
+  await ensureDataDir()
+  const entries = await readJsonlLines<ConversationSummary>(INDEX_FILE)
   const idx = entries.findIndex((e) => e.id === id)
   const entry = entries[idx]
   if (!entry) return false
   entry.title = title
   entry.updatedAt = new Date().toISOString()
-  rewriteIndex(entries)
+  await rewriteIndex(entries)
   return true
 }
 
-export function autoTitle(conversationId: string, firstUserMessage: string) {
+export async function autoTitle(
+  conversationId: string,
+  firstUserMessage: string,
+) {
   const title =
-    firstUserMessage.slice(0, 60) + (firstUserMessage.length > 60 ? '…' : '')
-  updateConversationTitle(conversationId, title)
+    firstUserMessage.slice(0, 60) +
+    (firstUserMessage.length > 60 ? '\u2026' : '')
+  await updateConversationTitle(conversationId, title)
 }
