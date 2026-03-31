@@ -314,7 +314,7 @@ export default function Home() {
 
   useEffect(() => {
     scrollToBottom()
-  }, [scrollToBottom])
+  }, [scrollToBottom, conversation])
 
   // Play audio cues on phase transitions
   const prevPhaseForSoundRef = useRef(audio.phase)
