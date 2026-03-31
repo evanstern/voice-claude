@@ -6,6 +6,8 @@ import { appRouter } from './trpc/router.js'
 
 export const app = new Hono()
 
+app.get('/health', (c) => c.json({ status: 'ok' }))
+
 const allowedOrigin = process.env.ALLOWED_ORIGIN
 app.use('/*', cors(allowedOrigin ? { origin: allowedOrigin } : undefined))
 
