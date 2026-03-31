@@ -79,6 +79,7 @@ export function attachWebSocket(httpServer: Server) {
     let audioChunks: Buffer[] = []
     let conversationId: string | null = null
     let isFirstMessage = true
+    let processingAbort: AbortController | null = null
 
     console.log(
       `[ws] connected  client=${client} session=${sessionId.slice(0, 8)}`,
@@ -129,6 +130,17 @@ export function attachWebSocket(httpServer: Server) {
           return
         }
 
+        // Handle cancel inline — abort any in-progress processing
+        if (msg.type === 'cancel') {
+          if (processingAbort) {
+            console.log('[ws] cancel     aborting in-progress processing')
+            processingAbort.abort()
+            processingAbort = null
+          }
+          send(ws, { type: 'cancelled' })
+          return
+        }
+
         handleControl(ws, sessionId, msg, () => ({
           audioChunks,
           resetAudio: () => {
@@ -138,6 +150,13 @@ export function attachWebSocket(httpServer: Server) {
           isFirstMessage,
           setFirstMessage: (val: boolean) => {
             isFirstMessage = val
+          },
+          getAbortSignal: () => {
+            processingAbort = new AbortController()
+            return processingAbort.signal
+          },
+          clearAbort: () => {
+            processingAbort = null
           },
         }))
         return
@@ -227,6 +246,8 @@ async function handleControl(
     conversationId: string | null
     isFirstMessage: boolean
     setFirstMessage: (val: boolean) => void
+    getAbortSignal: () => AbortSignal
+    clearAbort: () => void
   },
 ) {
   console.log(`[ws] control    type=${msg.type}`)
@@ -243,13 +264,19 @@ async function handleControl(
         conversationId,
         isFirstMessage,
         setFirstMessage,
+        getAbortSignal,
+        clearAbort,
       } = getAudioState()
+
+      const signal = getAbortSignal()
+
       if (audioChunks.length === 0) {
         send(ws, {
           type: 'transcription',
           text: '',
           error: 'No audio received',
         })
+        clearAbort()
         break
       }
 
@@ -272,6 +299,13 @@ async function handleControl(
         const message = err instanceof Error ? err.message : 'Unknown error'
         console.error(`[ws] stt error  ${message}`)
         send(ws, { type: 'transcription', text: '', error: message })
+        clearAbort()
+        break
+      }
+
+      if (signal.aborted) {
+        console.log('[ws] cancelled after transcription')
+        clearAbort()
         break
       }
 
@@ -282,6 +316,7 @@ async function handleControl(
         console.log('[ws] command    disregard — dropping message')
         send(ws, { type: 'transcription', text: userText })
         send(ws, { type: 'command', command: 'disregard' })
+        clearAbort()
         break
       }
 
@@ -292,6 +327,7 @@ async function handleControl(
         clearSession(sessionId)
         send(ws, { type: 'transcription', text: userText })
         send(ws, { type: 'command', command: 'clear' })
+        clearAbort()
         break
       }
 
@@ -300,7 +336,10 @@ async function handleControl(
 
       send(ws, { type: 'transcription', text: userText })
 
-      if (!userText) break
+      if (!userText) {
+        clearAbort()
+        break
+      }
 
       // Persist user message
       if (conversationId) {
@@ -334,6 +373,19 @@ async function handleControl(
           })
         }
 
+        if (signal.aborted) {
+          console.log('[ws] cancelled after claude response')
+          // Still send the response text so it appears in chat, just skip TTS
+          send(ws, {
+            type: 'claude_response',
+            text: response.text,
+            toolCalls: response.toolCalls,
+          })
+          finalizeInteraction(sessionId)
+          clearAbort()
+          break
+        }
+
         send(ws, {
           type: 'claude_response',
           text: response.text,
@@ -344,13 +396,21 @@ async function handleControl(
         //   Filter out code blocks, inline code, and raw paths first so
         //   we only pay for (and hear) the conversational content.
         const spokenText = response.text ? filterForTTS(response.text) : ''
-        if (spokenText) {
+        if (spokenText && !signal.aborted) {
           send(ws, { type: 'synthesizing' })
 
           try {
             recordTTS(sessionId, spokenText.length)
             const ttsProvider = await getTTSProvider()
             const audioBuffer = await ttsProvider.synthesize(spokenText)
+
+            if (signal.aborted) {
+              console.log('[ws] cancelled after TTS synthesis')
+              finalizeInteraction(sessionId)
+              clearAbort()
+              break
+            }
+
             send(ws, {
               type: 'tts_audio',
               format: ttsProvider.defaultFormat,
@@ -375,6 +435,7 @@ async function handleControl(
         send(ws, { type: 'claude_response', text: '', error: message })
         finalizeInteraction(sessionId)
       }
+      clearAbort()
       break
     }
   }
