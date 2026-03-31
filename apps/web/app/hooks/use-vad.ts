@@ -69,7 +69,8 @@ export function useVAD(
       // Calculate RMS level
       let sum = 0
       for (let i = 0; i < dataArray.length; i++) {
-        sum += dataArray[i] * dataArray[i]
+        const sample = dataArray[i] ?? 0
+        sum += sample * sample
       }
       const rms = Math.sqrt(sum / dataArray.length)
 
