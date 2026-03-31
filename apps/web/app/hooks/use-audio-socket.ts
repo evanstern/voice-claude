@@ -44,17 +44,23 @@ const RECONNECT_BASE_DELAY = 1000
 const RECONNECT_MAX_DELAY = 30000
 const RECONNECT_MAX_ATTEMPTS = 10
 
-function playAudio(data: ArrayBuffer, format = 'mp3'): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const mimeType =
-      format === 'ogg_opus'
-        ? 'audio/ogg'
-        : format === 'wav'
-          ? 'audio/wav'
-          : 'audio/mpeg'
-    const blob = new Blob([data], { type: mimeType })
-    const url = URL.createObjectURL(blob)
-    const audio = new Audio(url)
+interface PlaybackHandle {
+  promise: Promise<void>
+  audio: HTMLAudioElement
+}
+
+function playAudio(data: ArrayBuffer, format = 'mp3'): PlaybackHandle {
+  const mimeType =
+    format === 'ogg_opus'
+      ? 'audio/ogg'
+      : format === 'wav'
+        ? 'audio/wav'
+        : 'audio/mpeg'
+  const blob = new Blob([data], { type: mimeType })
+  const url = URL.createObjectURL(blob)
+  const audio = new Audio(url)
+
+  const promise = new Promise<void>((resolve, reject) => {
     audio.onended = () => {
       URL.revokeObjectURL(url)
       resolve()
@@ -65,6 +71,8 @@ function playAudio(data: ArrayBuffer, format = 'mp3'): Promise<void> {
     }
     audio.play().catch(reject)
   })
+
+  return { promise, audio }
 }
 
 export function useAudioSocket(wsUrl: string | null) {
@@ -76,6 +84,7 @@ export function useAudioSocket(wsUrl: string | null) {
   const expectingAudioRef = useRef(false)
   const audioFormatRef = useRef('mp3')
   const audioPlaybackRef = useRef<Promise<void> | null>(null)
+  const audioElementRef = useRef<HTMLAudioElement | null>(null)
 
   const reconnectAttemptRef = useRef(0)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -147,13 +156,17 @@ export function useAudioSocket(wsUrl: string | null) {
         )
 
         setState((s) => ({ ...s, phase: 'speaking' }))
-        const playbackPromise = playAudio(event.data, audioFormatRef.current)
+        const handle = playAudio(event.data, audioFormatRef.current)
+        audioElementRef.current = handle.audio
+        const playbackPromise = handle.promise
           .then(() => {
             console.log('[audio] playback complete')
+            audioElementRef.current = null
             setState((s) => ({ ...s, phase: 'done' }))
           })
           .catch((err) => {
             console.error('[audio] playback error:', err)
+            audioElementRef.current = null
             setState((s) => ({ ...s, phase: 'done' }))
           })
 
@@ -488,6 +501,28 @@ export function useAudioSocket(wsUrl: string | null) {
     console.log('[audio] recording cancelled, no audio sent')
   }, [])
 
+  const cancelPlayback = useCallback(() => {
+    // Stop any in-progress audio playback
+    const audioEl = audioElementRef.current
+    if (audioEl) {
+      audioEl.pause()
+      audioEl.currentTime = 0
+      audioElementRef.current = null
+      console.log('[audio] playback cancelled by user')
+    }
+
+    // Clear pending audio expectations
+    expectingAudioRef.current = false
+
+    // Tell the server to cancel any in-progress processing
+    const ws = wsRef.current
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'cancel' }))
+    }
+
+    setState((s) => ({ ...s, phase: 'done', activeTools: [] }))
+  }, [])
+
   const sendConversation = useCallback(
     (conversationId: string | null, isFirstMessage: boolean) => {
       const ws = wsRef.current
@@ -519,6 +554,7 @@ export function useAudioSocket(wsUrl: string | null) {
     startRecording,
     stopRecording,
     cancelRecording,
+    cancelPlayback,
     micStream,
     sendConversation,
   }

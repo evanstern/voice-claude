@@ -5,6 +5,7 @@ interface MicButtonProps {
   mode: 'push-to-talk' | 'auto'
   onStart: () => void
   onStop: () => void
+  onCancel: () => void
   onToggleMode: () => void
 }
 
@@ -46,23 +47,42 @@ function StopIcon({ className }: { className?: string }) {
   )
 }
 
+function CancelIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={2}
+      stroke="currentColor"
+    >
+      <title>Cancel</title>
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M6 18 18 6M6 6l12 12"
+      />
+    </svg>
+  )
+}
+
 const PHASE_HINTS: Record<string, Record<string, string>> = {
   'push-to-talk': {
     idle: 'Tap or hold space',
     recording: 'Release to send',
-    transcribing: 'Transcribing...',
-    thinking: 'Thinking...',
-    synthesizing: 'Generating...',
-    speaking: 'Speaking...',
+    transcribing: 'Tap to cancel',
+    thinking: 'Tap to cancel',
+    synthesizing: 'Tap to cancel',
+    speaking: 'Tap to stop',
     done: 'Tap or hold space',
   },
   auto: {
     idle: 'Listening...',
     recording: 'Speak now...',
-    transcribing: 'Transcribing...',
-    thinking: 'Thinking...',
-    synthesizing: 'Generating...',
-    speaking: 'Speaking...',
+    transcribing: 'Tap to cancel',
+    thinking: 'Tap to cancel',
+    synthesizing: 'Tap to cancel',
+    speaking: 'Tap to stop',
     done: 'Listening...',
   },
 }
@@ -74,11 +94,22 @@ export function MicButton({
   mode,
   onStart,
   onStop,
+  onCancel,
   onToggleMode,
 }: MicButtonProps) {
   const isRecording = phase === 'recording'
   const isAuto = mode === 'auto'
   const hints = PHASE_HINTS[mode] ?? PHASE_HINTS['push-to-talk'] ?? {}
+
+  const handleClick = () => {
+    if (busy) {
+      onCancel()
+    } else if (isRecording) {
+      onStop()
+    } else {
+      onStart()
+    }
+  }
 
   return (
     <div className="sticky bottom-0 z-20 flex flex-col items-center gap-2 pb-6 pt-3 bg-gradient-to-t from-background via-background to-transparent">
@@ -90,15 +121,15 @@ export function MicButton({
       <div className="flex items-center gap-4">
         <button
           type="button"
-          onClick={isRecording ? onStop : onStart}
-          disabled={!connected || busy}
+          onClick={handleClick}
+          disabled={!connected}
           className={`relative inline-flex items-center justify-center w-16 h-16 rounded-full transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 disabled:cursor-not-allowed ${
             isRecording
               ? 'bg-red-500/20 border-2 border-red-500 text-red-400 hover:bg-red-500/30'
-              : isAuto && (phase === 'idle' || phase === 'done')
-                ? 'bg-green-500/10 border-2 border-green-500/40 text-green-400 hover:bg-green-500/20'
-                : busy
-                  ? 'bg-primary/5 border-2 border-primary/20 text-primary/50'
+              : busy
+                ? 'bg-orange-500/10 border-2 border-orange-500/40 text-orange-400 hover:bg-orange-500/20 active:scale-95'
+                : isAuto && (phase === 'idle' || phase === 'done')
+                  ? 'bg-green-500/10 border-2 border-green-500/40 text-green-400 hover:bg-green-500/20'
                   : 'bg-primary/10 border-2 border-primary/40 text-primary hover:bg-primary/20 hover:border-primary/60 active:scale-95'
           }`}
         >
@@ -108,10 +139,12 @@ export function MicButton({
           {isAuto && !isRecording && !busy && (
             <span className="absolute inset-0 rounded-full animate-pulse bg-green-500/5" />
           )}
-          {busy && !isAuto && (
-            <span className="absolute inset-0 rounded-full animate-pulse bg-primary/10" />
+          {busy && (
+            <span className="absolute inset-0 rounded-full animate-pulse bg-orange-500/10" />
           )}
-          {isRecording ? (
+          {busy ? (
+            <CancelIcon className="w-7 h-7 relative z-10" />
+          ) : isRecording ? (
             <StopIcon className="w-7 h-7 relative z-10" />
           ) : (
             <MicIcon className="w-7 h-7 relative z-10" />

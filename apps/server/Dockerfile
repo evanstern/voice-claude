@@ -28,8 +28,8 @@ FROM node:22-slim AS runner
 
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
-# Install curl for healthcheck
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+# Install curl for healthcheck and git for Claude tool execution
+RUN apt-get update && apt-get install -y --no-install-recommends curl git && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 appuser

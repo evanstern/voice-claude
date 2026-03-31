@@ -338,9 +338,16 @@ export default function Home() {
     return () => clearInterval(timer)
   }, [audio.phase, play])
 
-  // Push-to-talk with spacebar
+  // Push-to-talk with spacebar, Escape to cancel
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Escape cancels any in-progress processing or playback
+      if (e.code === 'Escape' && audio.busy) {
+        e.preventDefault()
+        audio.cancelPlayback()
+        return
+      }
+
       if (
         e.code !== 'Space' ||
         e.target instanceof HTMLInputElement ||
@@ -495,6 +502,7 @@ export default function Home() {
         mode={mode}
         onStart={handleStartRecording}
         onStop={audio.stopRecording}
+        onCancel={audio.cancelPlayback}
         onToggleMode={toggleMode}
       />
     </div>
