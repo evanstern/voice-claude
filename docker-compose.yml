@@ -9,6 +9,7 @@ services:
       - .env
     environment:
       PORT: "4000"
+      PIPER_URL: http://piper:5000
     volumes:
       - .:/app
       - /app/node_modules
@@ -17,6 +18,8 @@ services:
       - /app/packages/contracts/node_modules
       - /app/packages/shared/node_modules
       - /app/packages/ui/node_modules
+    depends_on:
+      - piper
 
   web:
     build:
@@ -38,3 +41,13 @@ services:
       - /app/packages/ui/node_modules
     depends_on:
       - server
+
+  piper:
+    build:
+      context: ./docker/piper
+    env_file:
+      - .env
+    environment:
+      PIPER_MODEL: /models/${PIPER_MODEL_NAME:-en_US-lessac-medium.onnx}
+    volumes:
+      - ${PIPER_MODELS_DIR:-./models/piper}:/models
