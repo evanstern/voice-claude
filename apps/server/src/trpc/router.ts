@@ -1,3 +1,11 @@
+import { z } from 'zod/v4'
+import {
+  listConversations,
+  createConversation,
+  getConversation,
+  deleteConversation,
+  updateConversationTitle,
+} from '../storage/conversations.js'
 import { getStats } from '../voice/cost-tracker.js'
 import { createRouter, publicProcedure } from './init.js'
 
@@ -15,6 +23,31 @@ export const appRouter = createRouter({
   }),
   stats: publicProcedure.query(() => {
     return getStats()
+  }),
+  conversations: createRouter({
+    list: publicProcedure.query(() => {
+      return listConversations()
+    }),
+    get: publicProcedure
+      .input(z.object({ id: z.string() }))
+      .query(({ input }) => {
+        return getConversation(input.id)
+      }),
+    create: publicProcedure
+      .input(z.object({ title: z.string().optional() }).optional())
+      .mutation(({ input }) => {
+        return createConversation(input?.title)
+      }),
+    delete: publicProcedure
+      .input(z.object({ id: z.string() }))
+      .mutation(({ input }) => {
+        return deleteConversation(input.id)
+      }),
+    updateTitle: publicProcedure
+      .input(z.object({ id: z.string(), title: z.string() }))
+      .mutation(({ input }) => {
+        return updateConversationTitle(input.id, input.title)
+      }),
   }),
 })
 
