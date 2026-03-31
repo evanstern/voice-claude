@@ -27,6 +27,13 @@ interface SessionSummary {
   costs: ServiceCosts
 }
 
+interface ProviderModelEntry {
+  provider: string
+  model: string
+  cost: number
+  count: number
+}
+
 interface Stats {
   totalInteractions: number
   totalCost: number
@@ -40,6 +47,7 @@ interface Stats {
     claudeCacheWriteTokens: number
     ttsChars: number
   }
+  byProviderModel: ProviderModelEntry[]
   sessions: SessionSummary[]
   activeSessions: number
   startedAt: string
@@ -68,22 +76,43 @@ function formatDuration(seconds: number): string {
   return `${mins}m ${secs.toFixed(0)}s`
 }
 
+function providerColor(provider: string): string {
+  switch (provider) {
+    case 'anthropic':
+      return 'bg-violet-500'
+    case 'openai':
+      return 'bg-emerald-500'
+    case 'google':
+      return 'bg-blue-500'
+    case 'local':
+    case 'piper':
+      return 'bg-gray-500'
+    default:
+      return 'bg-amber-500'
+  }
+}
+
 function CostBar({
   label,
   cost,
   total,
   color,
+  detail,
 }: {
   label: string
   cost: number
   total: number
   color: string
+  detail?: string
 }) {
   const pct = total > 0 ? (cost / total) * 100 : 0
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between text-sm">
-        <span className="text-muted-foreground">{label}</span>
+        <span className="text-muted-foreground">
+          {label}
+          {detail && <span className="ml-2 text-xs opacity-60">{detail}</span>}
+        </span>
         <span className="font-mono font-medium text-foreground">
           {formatCost(cost)}
         </span>
@@ -231,6 +260,32 @@ export default function Costs() {
                 />
               </CardContent>
             </Card>
+
+            {/* Cost by Provider & Model */}
+            {stats.byProviderModel.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    Cost by Provider & Model
+                  </CardTitle>
+                  <CardDescription>
+                    Breakdown by AI provider and model
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {stats.byProviderModel.map((entry) => (
+                    <CostBar
+                      key={`${entry.provider}:${entry.model}`}
+                      label={`${entry.provider} / ${entry.model}`}
+                      cost={entry.cost}
+                      total={stats.totalCost}
+                      color={providerColor(entry.provider)}
+                      detail={`${formatNumber(entry.count)} calls`}
+                    />
+                  ))}
+                </CardContent>
+              </Card>
+            )}
 
             {/* Usage Details */}
             <Card>

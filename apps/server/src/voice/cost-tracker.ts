@@ -27,6 +27,13 @@ interface ServiceCosts {
   tts: number
 }
 
+export interface ProviderModelEntry {
+  provider: string
+  model: string
+  cost: number
+  count: number
+}
+
 interface SessionStats {
   interactions: number
   costs: ServiceCosts
@@ -64,6 +71,24 @@ const globalStats: GlobalStats = {
   totalTtsChars: 0,
   sessions: 0,
   startedAt: new Date().toISOString(),
+}
+
+// Per provider+model cost tracking (global, not per-session)
+const providerModelStats = new Map<string, ProviderModelEntry>()
+
+function trackProviderModel(
+  provider: string,
+  model: string,
+  cost: number,
+): void {
+  const key = `${provider}:${model}`
+  const entry = providerModelStats.get(key)
+  if (entry) {
+    entry.cost += cost
+    entry.count++
+  } else {
+    providerModelStats.set(key, { provider, model, cost, count: 1 })
+  }
 }
 
 // Pending costs for the current interaction (accumulated across calls, logged together)
@@ -105,20 +130,30 @@ function ensurePending(sessionId: string): {
   return pending
 }
 
-export function recordSTT(sessionId: string, durationSec: number): number {
+export function recordSTT(
+  sessionId: string,
+  durationSec: number,
+  provider = 'openai',
+  model = 'whisper-1',
+): number {
   const cost = (durationSec / 60) * RATES.whisperPerMinute
   const session = ensureSession(sessionId)
   session.costs.stt += cost
   session.sttDurationSec += durationSec
   globalStats.totalCosts.stt += cost
   globalStats.totalSttDurationSec += durationSec
+  trackProviderModel(provider, model, cost)
 
   const pending = ensurePending(sessionId)
   pending.stt += cost
   return cost
 }
 
-export function recordClaude(sessionId: string, usage: ClaudeUsage): number {
+export function recordClaude(
+  sessionId: string,
+  usage: ClaudeUsage,
+  model = 'claude-sonnet-4-6',
+): number {
   const inputCost = (usage.input_tokens / 1_000_000) * RATES.claudeInputPer1M
   const outputCost = (usage.output_tokens / 1_000_000) * RATES.claudeOutputPer1M
   const cacheReadCost =
@@ -141,19 +176,26 @@ export function recordClaude(sessionId: string, usage: ClaudeUsage): number {
   globalStats.totalClaudeCacheReadTokens += usage.cache_read_input_tokens ?? 0
   globalStats.totalClaudeCacheWriteTokens +=
     usage.cache_creation_input_tokens ?? 0
+  trackProviderModel('anthropic', model, cost)
 
   const pending = ensurePending(sessionId)
   pending.claude += cost
   return cost
 }
 
-export function recordTTS(sessionId: string, charCount: number): number {
+export function recordTTS(
+  sessionId: string,
+  charCount: number,
+  provider = 'openai',
+  model = 'tts-1',
+): number {
   const cost = (charCount / 1_000_000) * RATES.ttsCharsPer1M
   const session = ensureSession(sessionId)
   session.costs.tts += cost
   session.ttsChars += charCount
   globalStats.totalCosts.tts += cost
   globalStats.totalTtsChars += charCount
+  trackProviderModel(provider, model, cost)
 
   const pending = ensurePending(sessionId)
   pending.tts += cost
@@ -208,6 +250,10 @@ export function getStats() {
     costs: { ...s.costs },
   }))
 
+  const byProviderModel = Array.from(providerModelStats.values()).sort(
+    (a, b) => b.cost - a.cost,
+  )
+
   return {
     totalInteractions: globalStats.totalInteractions,
     totalCost,
@@ -221,6 +267,7 @@ export function getStats() {
       claudeCacheWriteTokens: globalStats.totalClaudeCacheWriteTokens,
       ttsChars: globalStats.totalTtsChars,
     },
+    byProviderModel,
     sessions: sessionSummaries,
     activeSessions: sessionData.size,
     startedAt: globalStats.startedAt,
