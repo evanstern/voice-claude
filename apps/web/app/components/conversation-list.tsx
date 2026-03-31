@@ -1,11 +1,11 @@
 import type { ConversationSummary } from '@voice-claude/contracts'
 import { Button } from '@voice-claude/ui/components/button'
+import { Link } from 'react-router'
 
 interface ConversationListProps {
   open: boolean
   conversations: ConversationSummary[]
   activeId: string | null
-  onSelect: (id: string) => void
   onNew: () => void
   onDelete: (id: string) => void
   onClose: () => void
@@ -27,7 +27,6 @@ export function ConversationList({
   open,
   conversations,
   activeId,
-  onSelect,
   onNew,
   onDelete,
   onClose,
@@ -81,7 +80,10 @@ export function ConversationList({
               variant="outline"
               size="sm"
               className="w-full"
-              onClick={onNew}
+              onClick={() => {
+                onNew()
+                onClose()
+              }}
             >
               <svg
                 className="w-3.5 h-3.5"
@@ -109,11 +111,11 @@ export function ConversationList({
               </p>
             )}
             {conversations.map((conv) => (
-              <button
+              <Link
                 key={conv.id}
-                type="button"
-                onClick={() => onSelect(conv.id)}
-                className={`w-full text-left rounded-lg px-3 py-2.5 mb-0.5 group transition-colors ${
+                to={`/c/${conv.id}`}
+                onClick={onClose}
+                className={`block w-full text-left rounded-lg px-3 py-2.5 mb-0.5 group transition-colors ${
                   conv.id === activeId
                     ? 'bg-primary/10 text-foreground'
                     : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
@@ -124,6 +126,7 @@ export function ConversationList({
                   <button
                     type="button"
                     onClick={(e) => {
+                      e.preventDefault()
                       e.stopPropagation()
                       onDelete(conv.id)
                     }}
@@ -149,7 +152,7 @@ export function ConversationList({
                   {formatRelative(conv.updatedAt)} · {conv.messageCount} msg
                   {conv.messageCount !== 1 ? 's' : ''}
                 </p>
-              </button>
+              </Link>
             ))}
           </div>
         </div>
