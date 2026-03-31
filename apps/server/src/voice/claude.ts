@@ -16,8 +16,8 @@ function getClient(): Anthropic {
 
 // --- Model routing ---
 
-const MODEL_SONNET = 'claude-sonnet-4-5'
-const MODEL_HAIKU = 'claude-haiku-4-5'
+const MODEL_SONNET = 'claude-sonnet-4-6'
+const MODEL_HAIKU = 'claude-haiku-4-5-20251001'
 
 type ModelMode = 'auto' | 'sonnet' | 'haiku'
 
@@ -27,27 +27,31 @@ function getModelMode(): ModelMode {
   return 'auto' // default
 }
 
-// Keywords that suggest the query needs tool use (and therefore Sonnet)
-const TOOL_KEYWORDS = [
-  'file', 'code', 'git', 'run', 'build', 'deploy',
-  'read', 'write', 'edit', 'commit', 'push', 'pull',
-  'branch', 'merge', 'diff', 'log', 'status',
-  'install', 'test', 'compile', 'lint', 'format',
-  'directory', 'folder', 'path', 'create', 'delete',
-  'remove', 'rename', 'move', 'copy', 'search', 'find',
-  'grep', 'cat', 'ls', 'cd', 'npm', 'pnpm', 'yarn',
-  'docker', 'make', 'script', 'package', 'config',
-  'debug', 'error', 'fix', 'refactor', 'implement',
-  'function', 'class', 'variable', 'import', 'module',
-  'repo', 'repository', 'pr', 'issue', 'release',
-  'server', 'database', 'api', 'endpoint', 'route',
-  'show me', 'look at', 'check the', 'what does',
-  'open', 'source', 'execute', 'command', 'shell', 'terminal',
+// Phrases/words that strongly indicate the user wants file/shell/git operations.
+// Keep this tight — false positives route cheap queries to the expensive model.
+const TOOL_PHRASES = [
+  // explicit action requests
+  'read the file', 'read file', 'open the file', 'open file',
+  'show me the', 'look at the', 'check the file', 'list the files',
+  'what does the file', 'what\'s in the',
+  'run the', 'run this', 'execute',
+  'edit the', 'write to', 'create a file', 'delete the file',
+  'search the code', 'search for', 'find the file',
+  // git
+  'git ', 'commit', 'push to', 'pull from', 'merge', 'branch',
+  'diff', 'git log', 'git status',
+  // build/dev
+  'npm ', 'pnpm ', 'yarn ', 'docker ',
+  'build the', 'compile', 'lint', 'deploy',
+  'install the', 'install dependencies',
+  // code-specific
+  'refactor', 'implement', 'debug the', 'fix the bug',
+  'what files', 'which files', 'list files', 'list directory',
 ]
 
 function looksLikeToolQuery(text: string): boolean {
   const lower = text.toLowerCase()
-  return TOOL_KEYWORDS.some((kw) => lower.includes(kw))
+  return TOOL_PHRASES.some((phrase) => lower.includes(phrase))
 }
 
 // Track sessions that have needed tools — once a session uses tools, prefer Sonnet
@@ -77,7 +81,11 @@ function pickModel(sessionId: string, userText: string): string {
 // --- End model routing ---
 
 const WORK_DIR = process.env.WORK_DIR ?? process.cwd()
-const SYSTEM_PROMPT = `You are a hands-free voice coding assistant. Input is speech-to-text — interpret generously despite transcription errors.
+const SYSTEM_PROMPT = `You are a hands-free voice coding assistant called Voice Claude. You run as a web app that the user accesses from their phone or computer. You can hear them speak through their microphone — their speech is transcribed and sent to you. Your responses are spoken back to them via text-to-speech. This is a live, real-time voice conversation.
+
+When the user says things like "can you hear me" or "are you there", respond naturally — you can hear them. If they ask what you are, explain that you're a voice interface for Claude that can help with coding tasks hands-free.
+
+Input is speech-to-text — interpret generously despite transcription errors.
 
 You have tools for files, shell commands, and git. Use them as needed.
 
