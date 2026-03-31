@@ -38,3 +38,25 @@ export const conversationSummarySchema = z.object({
 })
 
 export type ConversationSummary = z.infer<typeof conversationSummarySchema>
+
+// ── Client → Server WebSocket Messages ─────────────────────────
+
+export const setConversationMessage = z.object({
+  type: z.literal('set_conversation'),
+  conversationId: z.string().nullable(),
+  isFirstMessage: z.boolean().optional(),
+})
+
+export type SetConversationMessage = z.infer<typeof setConversationMessage>
+
+export const controlMessage = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('stop') }),
+  z.object({ type: z.literal('cancel') }),
+  z.object({ type: z.literal('ping') }),
+])
+
+export type ControlMessage = z.infer<typeof controlMessage>
+
+export const clientWsMessage = z.union([setConversationMessage, controlMessage])
+
+export type ClientWsMessage = z.infer<typeof clientWsMessage>
