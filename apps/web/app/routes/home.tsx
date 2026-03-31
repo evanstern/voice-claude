@@ -324,6 +324,20 @@ export default function Home() {
     }
   }, [audio.phase, audio.transcriptionError, audio.claudeError, play])
 
+  // Audio heartbeat during long-running phases (thinking, synthesizing)
+  useEffect(() => {
+    const isProcessing =
+      audio.phase === 'thinking' || audio.phase === 'synthesizing'
+    if (!isProcessing) return
+
+    // Play first pulse after 5 seconds, then every 5 seconds
+    const timer = setInterval(() => {
+      play('thinkingPulse')
+    }, 5000)
+
+    return () => clearInterval(timer)
+  }, [audio.phase, play])
+
   // Push-to-talk with spacebar
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
