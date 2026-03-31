@@ -25,7 +25,9 @@ export function getSTTProvider(): STTProvider {
 
   if (!factory) {
     const available = Object.keys(providers).join(', ')
-    throw new Error(`Unknown STT_PROVIDER "${name}". Available providers: ${available}`)
+    throw new Error(
+      `Unknown STT_PROVIDER "${name}". Available providers: ${available}`,
+    )
   }
 
   cachedProvider = factory()

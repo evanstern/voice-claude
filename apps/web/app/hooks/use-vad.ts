@@ -14,10 +14,7 @@ interface VADState {
   silenceDuration: number
 }
 
-export function useVAD(
-  stream: MediaStream | null,
-  options: VADOptions = {},
-) {
+export function useVAD(stream: MediaStream | null, options: VADOptions = {}) {
   const {
     silenceThreshold = 0.01,
     silenceTimeout = 1500,

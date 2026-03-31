@@ -38,9 +38,7 @@ export function StatusIndicator({ phase, activeTools }: StatusIndicatorProps) {
   return (
     <div className="flex justify-start w-full animate-fade-in-up">
       <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-card border border-border rounded-bl-md">
-        <div
-          className={`w-2 h-2 rounded-full animate-pulse ${colorClass}`}
-        />
+        <div className={`w-2 h-2 rounded-full animate-pulse ${colorClass}`} />
         <span className="text-sm text-muted-foreground">{label}</span>
       </div>
     </div>

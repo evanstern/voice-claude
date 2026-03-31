@@ -52,19 +52,14 @@ export function filterForTTS(text: string): string {
   // 3. Strip inline code — just remove the backticks and keep the token
   //    name so the sentence still makes sense ("the `main` function" ->
   //    "the main function").
-  filtered = filtered.replace(INLINE_CODE, (match) =>
-    match.slice(1, -1),
-  )
+  filtered = filtered.replace(INLINE_CODE, (match) => match.slice(1, -1))
 
   // 4. Strip raw file-path lines
   filtered = filtered.replace(RAW_FILE_PATH, '')
 
   // 5. Collapse duplicate [code omitted] markers that can appear when
   //    multiple code blocks were adjacent.
-  filtered = filtered.replace(
-    /(\[code omitted\]\s*){2,}/g,
-    '[code omitted]\n',
-  )
+  filtered = filtered.replace(/(\[code omitted\]\s*){2,}/g, '[code omitted]\n')
 
   // 6. Collapse excessive blank lines into a single blank line
   filtered = filtered.replace(/\n{3,}/g, '\n\n')

@@ -1,6 +1,6 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { execSync } from 'node:child_process'
-import { readFileSync, existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import Anthropic from '@anthropic-ai/sdk'
 
 let client: Anthropic | null = null
 
@@ -31,22 +31,56 @@ function getModelMode(): ModelMode {
 // Keep this tight — false positives route cheap queries to the expensive model.
 const TOOL_PHRASES = [
   // explicit action requests
-  'read the file', 'read file', 'open the file', 'open file',
-  'show me the', 'look at the', 'check the file', 'list the files',
-  'what does the file', 'what\'s in the',
-  'run the', 'run this', 'execute',
-  'edit the', 'write to', 'create a file', 'delete the file',
-  'search the code', 'search for', 'find the file',
+  'read the file',
+  'read file',
+  'open the file',
+  'open file',
+  'show me the',
+  'look at the',
+  'check the file',
+  'list the files',
+  'what does the file',
+  "what's in the",
+  'run the',
+  'run this',
+  'execute',
+  'edit the',
+  'write to',
+  'create a file',
+  'delete the file',
+  'search the code',
+  'search for',
+  'find the file',
   // git
-  'git ', 'commit', 'push to', 'pull from', 'merge', 'branch',
-  'diff', 'git log', 'git status',
+  'git ',
+  'commit',
+  'push to',
+  'pull from',
+  'merge',
+  'branch',
+  'diff',
+  'git log',
+  'git status',
   // build/dev
-  'npm ', 'pnpm ', 'yarn ', 'docker ',
-  'build the', 'compile', 'lint', 'deploy',
-  'install the', 'install dependencies',
+  'npm ',
+  'pnpm ',
+  'yarn ',
+  'docker ',
+  'build the',
+  'compile',
+  'lint',
+  'deploy',
+  'install the',
+  'install dependencies',
   // code-specific
-  'refactor', 'implement', 'debug the', 'fix the bug',
-  'what files', 'which files', 'list files', 'list directory',
+  'refactor',
+  'implement',
+  'debug the',
+  'fix the bug',
+  'what files',
+  'which files',
+  'list files',
+  'list directory',
 ]
 
 function looksLikeToolQuery(text: string): boolean {
@@ -122,7 +156,8 @@ const tools: Anthropic.Tool[] = [
       properties: {
         path: {
           type: 'string',
-          description: 'Path to the file (relative to working directory or absolute)',
+          description:
+            'Path to the file (relative to working directory or absolute)',
         },
       },
       required: ['path'],
@@ -131,10 +166,7 @@ const tools: Anthropic.Tool[] = [
   },
 ]
 
-function executeTool(
-  name: string,
-  input: Record<string, string>,
-): string {
+function executeTool(name: string, input: Record<string, string>): string {
   switch (name) {
     case 'run_shell': {
       const cmd = input.command ?? ''
@@ -202,7 +234,7 @@ export async function chat(
   if (!sessions.has(sessionId)) {
     sessions.set(sessionId, [])
   }
-  const messages = sessions.get(sessionId)!
+  const messages = sessions.get(sessionId) ?? []
   messages.push({ role: 'user', content: userText })
 
   const toolCalls: ClaudeResponse['toolCalls'] = []
@@ -217,7 +249,9 @@ export async function chat(
 
   // Pick the initial model based on heuristics
   let model = pickModel(sessionId, userText)
-  console.log(`[claude] model routing: ${model} (mode=${getModelMode()}, session=${sessionId})`)
+  console.log(
+    `[claude] model routing: ${model} (mode=${getModelMode()}, session=${sessionId})`,
+  )
 
   while (continueCount <= MAX_CONTINUES) {
     try {
@@ -227,7 +261,9 @@ export async function chat(
       while (iterations < MAX_ITERATIONS) {
         iterations++
 
-        console.log(`[claude] sending request to ${model} (iteration ${iterations}, continue ${continueCount})`)
+        console.log(
+          `[claude] sending request to ${model} (iteration ${iterations}, continue ${continueCount})`,
+        )
         const response = await anthropic.messages.create({
           model,
           max_tokens: 4096,
@@ -243,7 +279,10 @@ export async function chat(
         })
 
         // Log prompt caching stats
-        const usage = response.usage as unknown as Record<string, number | undefined>
+        const usage = response.usage as unknown as Record<
+          string,
+          number | undefined
+        >
         const cacheRead = usage.cache_read_input_tokens ?? 0
         const cacheCreation = usage.cache_creation_input_tokens ?? 0
         if (cacheRead > 0 || cacheCreation > 0) {
@@ -258,23 +297,29 @@ export async function chat(
         accumulatedUsage.input_tokens += response.usage.input_tokens
         accumulatedUsage.output_tokens += response.usage.output_tokens
         accumulatedUsage.cache_creation_input_tokens +=
-          (response.usage as unknown as Record<string, number>).cache_creation_input_tokens ?? 0
+          (response.usage as unknown as Record<string, number>)
+            .cache_creation_input_tokens ?? 0
         accumulatedUsage.cache_read_input_tokens +=
-          (response.usage as unknown as Record<string, number>).cache_read_input_tokens ?? 0
+          (response.usage as unknown as Record<string, number>)
+            .cache_read_input_tokens ?? 0
 
         if (response.stop_reason === 'end_turn') {
           const textBlock = response.content.find(
             (b): b is Anthropic.TextBlock => b.type === 'text',
           )
           const text = textBlock?.text ?? ''
-          console.log(`[claude] response (${iterations} iterations, ${continueCount} continues): "${text.slice(0, 100)}${text.length > 100 ? '...' : ''}"`)
-          return { text, toolCalls, usage: accumulatedUsage , model }
+          console.log(
+            `[claude] response (${iterations} iterations, ${continueCount} continues): "${text.slice(0, 100)}${text.length > 100 ? '...' : ''}"`,
+          )
+          return { text, toolCalls, usage: accumulatedUsage, model }
         }
 
         if (response.stop_reason === 'tool_use') {
           // If we were using Haiku and it wants tools, escalate to Sonnet
           if (model === MODEL_HAIKU) {
-            console.log(`[claude] Haiku requested tool_use — escalating to Sonnet for this session`)
+            console.log(
+              '[claude] Haiku requested tool_use — escalating to Sonnet for this session',
+            )
             model = MODEL_SONNET
             toolSessions.add(sessionId)
 
@@ -304,7 +349,11 @@ export async function chat(
                 ? `${result.slice(0, 10_000)}\n... (truncated, ${result.length} chars total)`
                 : result
 
-            toolCalls.push({ name: tool.name, input: inputStr, result: truncated })
+            toolCalls.push({
+              name: tool.name,
+              input: inputStr,
+              result: truncated,
+            })
             toolResults.push({
               type: 'tool_result',
               tool_use_id: tool.id,
@@ -320,22 +369,38 @@ export async function chat(
         const textBlock = response.content.find(
           (b): b is Anthropic.TextBlock => b.type === 'text',
         )
-        return { text: textBlock?.text ?? '', toolCalls, usage: accumulatedUsage, model }
+        return {
+          text: textBlock?.text ?? '',
+          toolCalls,
+          usage: accumulatedUsage,
+          model,
+        }
       }
 
-      return { text: 'I hit the maximum number of tool iterations. Could you try a simpler request?', toolCalls, usage: accumulatedUsage , model }
-
+      return {
+        text: 'I hit the maximum number of tool iterations. Could you try a simpler request?',
+        toolCalls,
+        usage: accumulatedUsage,
+        model,
+      }
     } catch (err) {
-      const error = err as { message?: string; error?: { type?: string; message?: string } }
-      const errorMessage = error.error?.message ?? error.message ?? 'Unknown error'
+      const error = err as {
+        message?: string
+        error?: { type?: string; message?: string }
+      }
+      const errorMessage =
+        error.error?.message ?? error.message ?? 'Unknown error'
 
       // Check if this is a max iterations error from the API
-      if (errorMessage.includes('maximum number of tool') ||
-          errorMessage.includes('too many tool calls') ||
-          error.error?.type === 'invalid_request_error') {
-
+      if (
+        errorMessage.includes('maximum number of tool') ||
+        errorMessage.includes('too many tool calls') ||
+        error.error?.type === 'invalid_request_error'
+      ) {
         continueCount++
-        console.log(`[claude] hit API tool limit, auto-continuing (${continueCount}/${MAX_CONTINUES})`)
+        console.log(
+          `[claude] hit API tool limit, auto-continuing (${continueCount}/${MAX_CONTINUES})`,
+        )
 
         if (continueCount > MAX_CONTINUES) {
           return {
@@ -347,7 +412,10 @@ export async function chat(
         }
 
         // Add a continue message and loop again
-        messages.push({ role: 'user', content: 'Please continue with the remaining tasks.' })
+        messages.push({
+          role: 'user',
+          content: 'Please continue with the remaining tasks.',
+        })
         continue
       }
 
@@ -356,7 +424,12 @@ export async function chat(
     }
   }
 
-  return { text: 'Completed the available operations.', toolCalls, usage: accumulatedUsage , model }
+  return {
+    text: 'Completed the available operations.',
+    toolCalls,
+    usage: accumulatedUsage,
+    model,
+  }
 }
 
 export function clearSession(sessionId: string) {
@@ -378,5 +451,7 @@ export function restoreSession(
   if (history.some((m) => m.role === 'assistant')) {
     toolSessions.add(sessionId)
   }
-  console.log(`[claude] restored session ${sessionId.slice(0, 8)} with ${messages.length} messages`)
+  console.log(
+    `[claude] restored session ${sessionId.slice(0, 8)} with ${messages.length} messages`,
+  )
 }

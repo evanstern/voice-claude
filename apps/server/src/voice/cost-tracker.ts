@@ -53,7 +53,7 @@ interface GlobalStats {
 
 // In-memory state
 const sessionData = new Map<string, SessionStats>()
-let globalStats: GlobalStats = {
+const globalStats: GlobalStats = {
   totalInteractions: 0,
   totalCosts: { stt: 0, claude: 0, tts: 0 },
   totalSttDurationSec: 0,
@@ -86,16 +86,23 @@ function ensureSession(sessionId: string): SessionStats {
       ttsChars: 0,
     })
   }
-  return sessionData.get(sessionId)!
+  const session = sessionData.get(sessionId)
+  if (!session) throw new Error(`Session ${sessionId} not found after init`)
+  return session
 }
 
-function ensurePending(
-  sessionId: string,
-): { stt: number; claude: number; tts: number } {
+function ensurePending(sessionId: string): {
+  stt: number
+  claude: number
+  tts: number
+} {
   if (!pendingCosts.has(sessionId)) {
     pendingCosts.set(sessionId, { stt: 0, claude: 0, tts: 0 })
   }
-  return pendingCosts.get(sessionId)!
+  const pending = pendingCosts.get(sessionId)
+  if (!pending)
+    throw new Error(`Pending costs ${sessionId} not found after init`)
+  return pending
 }
 
 export function recordSTT(sessionId: string, durationSec: number): number {
@@ -113,8 +120,7 @@ export function recordSTT(sessionId: string, durationSec: number): number {
 
 export function recordClaude(sessionId: string, usage: ClaudeUsage): number {
   const inputCost = (usage.input_tokens / 1_000_000) * RATES.claudeInputPer1M
-  const outputCost =
-    (usage.output_tokens / 1_000_000) * RATES.claudeOutputPer1M
+  const outputCost = (usage.output_tokens / 1_000_000) * RATES.claudeOutputPer1M
   const cacheReadCost =
     ((usage.cache_read_input_tokens ?? 0) / 1_000_000) *
     RATES.claudeCacheReadPer1M
@@ -132,8 +138,7 @@ export function recordClaude(sessionId: string, usage: ClaudeUsage): number {
   globalStats.totalCosts.claude += cost
   globalStats.totalClaudeInputTokens += usage.input_tokens
   globalStats.totalClaudeOutputTokens += usage.output_tokens
-  globalStats.totalClaudeCacheReadTokens +=
-    usage.cache_read_input_tokens ?? 0
+  globalStats.totalClaudeCacheReadTokens += usage.cache_read_input_tokens ?? 0
   globalStats.totalClaudeCacheWriteTokens +=
     usage.cache_creation_input_tokens ?? 0
 
@@ -187,14 +192,12 @@ export function getStats() {
       ? totalCost / globalStats.totalInteractions
       : 0
 
-  const sessionSummaries = Array.from(sessionData.entries()).map(
-    ([id, s]) => ({
-      sessionId: id.slice(0, 8),
-      interactions: s.interactions,
-      totalCost: s.costs.stt + s.costs.claude + s.costs.tts,
-      costs: { ...s.costs },
-    }),
-  )
+  const sessionSummaries = Array.from(sessionData.entries()).map(([id, s]) => ({
+    sessionId: id.slice(0, 8),
+    interactions: s.interactions,
+    totalCost: s.costs.stt + s.costs.claude + s.costs.tts,
+    costs: { ...s.costs },
+  }))
 
   return {
     totalInteractions: globalStats.totalInteractions,
