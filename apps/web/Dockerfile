@@ -27,6 +27,12 @@ RUN pnpm run build --filter=@voice-claude/web...
 # ---- Runner ----
 FROM node:22-slim AS runner
 
+# Install curl for healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 appuser
+
 ENV NODE_ENV=production
 WORKDIR /app
 
@@ -42,5 +48,10 @@ COPY --from=deps /app/apps/web/node_modules/ ./apps/web/node_modules/
 COPY --from=build /app/apps/web/package.json ./
 
 EXPOSE 3000
+
+USER appuser
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:3000/health || exit 1
 
 CMD ["node", "build/server/index.js"]

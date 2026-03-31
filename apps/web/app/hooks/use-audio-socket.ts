@@ -81,6 +81,7 @@ export function useAudioSocket(wsUrl: string | null) {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const intentionalCloseRef = useRef(false)
   const [connectKey, setConnectKey] = useState(0)
+  const [micError, setMicError] = useState<string | null>(null)
 
   const [state, setState] = useState<AudioSocketState>({
     connected: false,
@@ -358,13 +359,37 @@ export function useAudioSocket(wsUrl: string | null) {
     const ws = wsRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) return
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        sampleRate: 16000,
-      },
-    })
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 16000,
+        },
+      })
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error))
+      console.error(`[audio] getUserMedia failed: ${err.message}`)
+
+      if (err.name === 'NotAllowedError') {
+        setMicError(
+          'Microphone permission denied. Please allow microphone access and try again.',
+        )
+      } else if (err.name === 'NotFoundError') {
+        setMicError(
+          'No microphone found. Please connect a microphone and try again.',
+        )
+      } else {
+        setMicError(err.message)
+      }
+
+      setState((s) => ({ ...s, phase: 'idle' }))
+      return
+    }
+
+    // Clear any previous mic error on successful access
+    setMicError(null)
     streamRef.current = stream
 
     const mediaRecorder = new MediaRecorder(stream, {
@@ -490,6 +515,7 @@ export function useAudioSocket(wsUrl: string | null) {
   return {
     ...state,
     busy,
+    micError,
     startRecording,
     stopRecording,
     cancelRecording,
