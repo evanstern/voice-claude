@@ -1,3 +1,5 @@
+import { MarkdownContent } from './markdown-content'
+
 interface ToolCall {
   name: string
   input: string
@@ -67,8 +69,10 @@ export function ChatMessage({
         >
           {error ? (
             <p className="text-destructive">{error}</p>
-          ) : (
+          ) : isUser ? (
             <p className="whitespace-pre-wrap">{content}</p>
+          ) : (
+            <MarkdownContent content={content} />
           )}
         </div>
 
