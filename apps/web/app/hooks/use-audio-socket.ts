@@ -391,6 +391,30 @@ export function useAudioSocket(wsUrl: string | null) {
     console.log('[audio] recording stopped, requesting transcription')
   }, [])
 
+  const cancelRecording = useCallback(() => {
+    const mediaRecorder = mediaRecorderRef.current
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop()
+    }
+    mediaRecorderRef.current = null
+
+    const stream = streamRef.current
+    if (stream) {
+      for (const track of stream.getTracks()) {
+        track.stop()
+      }
+    }
+    streamRef.current = null
+    chunksRef.current = []
+
+    setState((s) => ({
+      ...s,
+      phase: 'idle',
+    }))
+
+    console.log('[audio] recording cancelled, no audio sent')
+  }, [])
+
   const sendConversation = useCallback(
     (conversationId: string | null, isFirstMessage: boolean) => {
       const ws = wsRef.current
@@ -415,5 +439,5 @@ export function useAudioSocket(wsUrl: string | null) {
   // Expose the mic stream so VAD can attach to it
   const micStream = streamRef.current
 
-  return { ...state, busy, startRecording, stopRecording, micStream, sendConversation }
+  return { ...state, busy, startRecording, stopRecording, cancelRecording, micStream, sendConversation }
 }

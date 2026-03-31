@@ -57,8 +57,17 @@ export default function Home() {
   // Mode: push-to-talk (default) or auto (always-listening with VAD)
   const [mode, setMode] = useState<'push-to-talk' | 'auto'>('push-to-talk')
   const toggleMode = useCallback(() => {
-    setMode((m) => (m === 'push-to-talk' ? 'auto' : 'push-to-talk'))
-  }, [])
+    setMode((m) => {
+      if (m === 'auto') {
+        // Switching to push-to-talk: cancel any in-progress recording without sending
+        if (audio.phase === 'recording') {
+          audio.cancelRecording()
+        }
+        return 'push-to-talk'
+      }
+      return 'auto'
+    })
+  }, [audio])
 
   // VAD for auto mode
   const vad = useVAD(mode === 'auto' ? audio.micStream : null, {
