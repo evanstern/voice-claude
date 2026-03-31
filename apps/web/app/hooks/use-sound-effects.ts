@@ -5,6 +5,7 @@ type SoundName =
   | 'messageSent'
   | 'error'
   | 'commandAcknowledged'
+  | 'thinkingPulse'
 
 /**
  * Synthesize short audio cues using the Web Audio API.
@@ -40,6 +41,9 @@ export function useSoundEffects() {
             break
           case 'commandAcknowledged':
             playCommandAcknowledged(ctx)
+            break
+          case 'thinkingPulse':
+            playThinkingPulse(ctx)
             break
         }
       } catch {
@@ -162,4 +166,23 @@ function playCommandAcknowledged(ctx: AudioContext) {
     osc.start(start)
     osc.stop(start + 0.08)
   }
+}
+
+/**
+ * Thinking pulse: very soft, low single tone — a gentle "still here" nudge.
+ * Duration ~0.3 s. Deliberately quiet so it doesn't compete with speech.
+ */
+function playThinkingPulse(ctx: AudioContext) {
+  const now = ctx.currentTime
+
+  const osc = ctx.createOscillator()
+  const gain = ctx.createGain()
+  osc.type = 'sine'
+  osc.frequency.value = 440 // A4 — warm, neutral
+  gain.gain.setValueAtTime(0, now)
+  gain.gain.linearRampToValueAtTime(0.06, now + 0.08)
+  gain.gain.linearRampToValueAtTime(0, now + 0.3)
+  osc.connect(gain).connect(ctx.destination)
+  osc.start(now)
+  osc.stop(now + 0.3)
 }
