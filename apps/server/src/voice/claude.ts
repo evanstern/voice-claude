@@ -363,3 +363,20 @@ export function clearSession(sessionId: string) {
   sessions.delete(sessionId)
   toolSessions.delete(sessionId)
 }
+
+export function restoreSession(
+  sessionId: string,
+  history: Array<{ role: 'user' | 'assistant'; content: string }>,
+) {
+  const messages: Anthropic.MessageParam[] = []
+  for (const msg of history) {
+    if (msg.content) {
+      messages.push({ role: msg.role, content: msg.content })
+    }
+  }
+  sessions.set(sessionId, messages)
+  if (history.some((m) => m.role === 'assistant')) {
+    toolSessions.add(sessionId)
+  }
+  console.log(`[claude] restored session ${sessionId.slice(0, 8)} with ${messages.length} messages`)
+}
