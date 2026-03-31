@@ -214,6 +214,27 @@ async function executeTool(
 
 // Conversation state per session
 const sessions = new Map<string, Anthropic.MessageParam[]>()
+const sessionLastActive = new Map<string, number>()
+
+const SESSION_TTL_MS = 30 * 60 * 1000 // 30 minutes
+const MAX_SESSION_MESSAGES = 50
+
+// Evict sessions that have been inactive for longer than SESSION_TTL_MS.
+// Runs on a fixed interval so stale sessions don't accumulate.
+const SESSION_EVICTION_INTERVAL_MS = 5 * 60 * 1000 // check every 5 minutes
+setInterval(() => {
+  const now = Date.now()
+  for (const [id, lastActive] of sessionLastActive) {
+    if (now - lastActive > SESSION_TTL_MS) {
+      console.log(
+        `[claude] evicting stale session ${id.slice(0, 8)} (inactive ${Math.round((now - lastActive) / 1000 / 60)}m)`,
+      )
+      sessions.delete(id)
+      sessionLastActive.delete(id)
+      toolSessions.delete(id)
+    }
+  }
+}, SESSION_EVICTION_INTERVAL_MS).unref()
 
 export interface ClaudeUsageResult {
   input_tokens: number
@@ -239,8 +260,15 @@ export async function chat(
   if (!sessions.has(sessionId)) {
     sessions.set(sessionId, [])
   }
+  sessionLastActive.set(sessionId, Date.now())
   const messages = sessions.get(sessionId) ?? []
   messages.push({ role: 'user', content: userText })
+
+  // Enforce max message depth — keep the most recent messages
+  if (messages.length > MAX_SESSION_MESSAGES) {
+    const excess = messages.length - MAX_SESSION_MESSAGES
+    messages.splice(0, excess)
+  }
 
   const toolCalls: ClaudeResponse['toolCalls'] = []
   const accumulatedUsage: ClaudeUsageResult = {
@@ -439,6 +467,7 @@ export async function chat(
 
 export function clearSession(sessionId: string) {
   sessions.delete(sessionId)
+  sessionLastActive.delete(sessionId)
   toolSessions.delete(sessionId)
 }
 

@@ -181,6 +181,15 @@ export function finalizeInteraction(sessionId: string): void {
   pendingCosts.delete(sessionId)
 }
 
+/**
+ * Remove all tracking data for a session. Call when the WebSocket disconnects
+ * so the sessionData map doesn't grow unbounded.
+ */
+export function cleanupSession(sessionId: string): void {
+  sessionData.delete(sessionId)
+  pendingCosts.delete(sessionId)
+}
+
 export function getStats() {
   const totalCost =
     globalStats.totalCosts.stt +
