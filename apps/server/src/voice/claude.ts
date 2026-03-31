@@ -1,5 +1,8 @@
-import { execSync } from 'node:child_process'
+import { exec } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
+import { promisify } from 'node:util'
+
+const execAsync = promisify(exec)
 import Anthropic from '@anthropic-ai/sdk'
 
 let client: Anthropic | null = null
@@ -166,19 +169,21 @@ const tools: Anthropic.Tool[] = [
   },
 ]
 
-function executeTool(name: string, input: Record<string, string>): string {
+async function executeTool(
+  name: string,
+  input: Record<string, string>,
+): Promise<string> {
   switch (name) {
     case 'run_shell': {
       const cmd = input.command ?? ''
       console.log(`[claude] tool run_shell: ${cmd}`)
       try {
-        const output = execSync(cmd, {
+        const { stdout } = await execAsync(cmd, {
           cwd: WORK_DIR,
-          encoding: 'utf-8',
           timeout: 30_000,
           maxBuffer: 1024 * 1024,
         })
-        return output.trim() || '(no output)'
+        return stdout.trim() || '(no output)'
       } catch (err) {
         const e = err as { stderr?: string; message?: string }
         return `Error: ${e.stderr ?? e.message ?? 'unknown error'}`
@@ -343,7 +348,7 @@ export async function chat(
             const inputStr = JSON.stringify(input)
             onToolUse?.(tool.name, inputStr)
 
-            const result = executeTool(tool.name, input)
+            const result = await executeTool(tool.name, input)
             const truncated =
               result.length > 10_000
                 ? `${result.slice(0, 10_000)}\n... (truncated, ${result.length} chars total)`
