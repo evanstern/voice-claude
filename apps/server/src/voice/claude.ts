@@ -1,5 +1,6 @@
 import { exec } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
+import path from 'node:path'
 import { promisify } from 'node:util'
 
 const execAsync = promisify(exec)
@@ -192,9 +193,11 @@ async function executeTool(
 
     case 'read_file': {
       const filePath = input.path ?? ''
-      const resolved = filePath.startsWith('/')
-        ? filePath
-        : `${WORK_DIR}/${filePath}`
+      const resolvedWorkDir = path.resolve(WORK_DIR)
+      const resolved = path.resolve(WORK_DIR, filePath)
+      if (!resolved.startsWith(resolvedWorkDir)) {
+        return 'Error: access denied — path is outside the working directory'
+      }
       console.log(`[claude] tool read_file: ${resolved}`)
       if (!existsSync(resolved)) {
         return `Error: file not found: ${resolved}`
