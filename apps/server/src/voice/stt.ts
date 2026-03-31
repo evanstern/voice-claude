@@ -1,36 +1,46 @@
-import { toFile } from 'openai'
-import { getOpenAIClient } from './openai.js'
+import { LocalSTTProvider } from './local-stt.js'
+import { OpenAISTTProvider } from './openai-stt.js'
+import type { STTProvider, STTResult } from './stt-provider.js'
 
-export interface TranscriptionResult {
-  text: string
-  durationSec: number
+export type { STTProvider, STTResult }
+export type { STTResult as TranscriptionResult }
+
+// Provider registry: maps provider name to a lazy factory
+const providers: Record<string, () => STTProvider> = {
+  openai: () => new OpenAISTTProvider(),
+  local: () => new LocalSTTProvider(),
 }
 
+let cachedProvider: STTProvider | null = null
+
+/**
+ * Returns the configured STT provider.
+ * Reads STT_PROVIDER env var (default: "openai").
+ */
+export function getSTTProvider(): STTProvider {
+  if (cachedProvider) return cachedProvider
+
+  const name = process.env.STT_PROVIDER ?? 'openai'
+  const factory = providers[name]
+
+  if (!factory) {
+    const available = Object.keys(providers).join(', ')
+    throw new Error(`Unknown STT_PROVIDER "${name}". Available providers: ${available}`)
+  }
+
+  cachedProvider = factory()
+  console.log(`[stt] using provider: ${cachedProvider.name}`)
+  return cachedProvider
+}
+
+/**
+ * Backward-compatible transcribe function.
+ * Delegates to the configured STT provider.
+ */
 export async function transcribe(
   audioBuffer: Buffer,
   mimeType = 'audio/webm',
-): Promise<TranscriptionResult> {
-  const openai = getOpenAIClient()
-
-  const ext = mimeType.includes('webm') ? 'webm' : 'wav'
-  const file = await toFile(audioBuffer, `audio.${ext}`, { type: mimeType })
-
-  console.log(
-    `[stt] transcribing ${(audioBuffer.byteLength / 1024).toFixed(1)} KB of ${mimeType}`,
-  )
-  const start = Date.now()
-
-  const response = await openai.audio.transcriptions.create({
-    model: 'whisper-1',
-    file,
-    response_format: 'verbose_json',
-  })
-
-  const elapsed = Date.now() - start
-  const resp = response as unknown as { text?: string; duration?: number }
-  const text = (resp.text ?? '').trim()
-  const durationSec = resp.duration ?? 0
-
-  console.log(`[stt] result (${elapsed}ms, ${durationSec.toFixed(1)}s audio): "${text}"`)
-  return { text, durationSec }
+): Promise<STTResult> {
+  const provider = getSTTProvider()
+  return provider.transcribe(audioBuffer, mimeType)
 }
