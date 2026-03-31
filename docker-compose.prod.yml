@@ -11,8 +11,12 @@ services:
       PORT: "4000"
       NODE_ENV: production
       WORK_DIR: /workspace
+      PIPER_URL: http://piper:5000
     volumes:
       - ${WORK_DIR:-./workspace}:/workspace
+    depends_on:
+      piper:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - voice-claude
@@ -31,6 +35,19 @@ services:
       SERVER_URL: http://server:4000
     depends_on:
       - server
+    restart: unless-stopped
+    networks:
+      - voice-claude
+
+  piper:
+    build:
+      context: ./docker/piper
+    env_file:
+      - .env
+    environment:
+      PIPER_MODEL: /models/${PIPER_MODEL_NAME:-en_US-lessac-medium.onnx}
+    volumes:
+      - ${PIPER_MODELS_DIR:-./models/piper}:/models
     restart: unless-stopped
     networks:
       - voice-claude

@@ -41,7 +41,12 @@ interface AudioSocketState {
 
 function playAudio(data: ArrayBuffer, format = 'mp3'): Promise<void> {
   return new Promise((resolve, reject) => {
-    const mimeType = format === 'ogg_opus' ? 'audio/ogg' : 'audio/mpeg'
+    const mimeType =
+      format === 'ogg_opus'
+        ? 'audio/ogg'
+        : format === 'wav'
+          ? 'audio/wav'
+          : 'audio/mpeg'
     const blob = new Blob([data], { type: mimeType })
     const url = URL.createObjectURL(blob)
     const audio = new Audio(url)

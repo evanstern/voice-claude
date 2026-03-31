@@ -8,3 +8,5 @@ build/
 .DS_Store
 .turbo
 data/
+models/piper/*.onnx
+models/piper/*.onnx.json
