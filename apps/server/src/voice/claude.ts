@@ -170,9 +170,17 @@ function executeTool(
 // Conversation state per session
 const sessions = new Map<string, Anthropic.MessageParam[]>()
 
+export interface ClaudeUsageResult {
+  input_tokens: number
+  output_tokens: number
+  cache_creation_input_tokens: number
+  cache_read_input_tokens: number
+}
+
 export interface ClaudeResponse {
   text: string
   toolCalls: Array<{ name: string; input: string; result: string }>
+  usage: ClaudeUsageResult
   model: string
 }
 
@@ -190,6 +198,12 @@ export async function chat(
   messages.push({ role: 'user', content: userText })
 
   const toolCalls: ClaudeResponse['toolCalls'] = []
+  const accumulatedUsage: ClaudeUsageResult = {
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+  }
   let continueCount = 0
   const MAX_CONTINUES = 3
 
@@ -232,13 +246,21 @@ export async function chat(
 
         messages.push({ role: 'assistant', content: response.content })
 
+        // Accumulate token usage from this API call
+        accumulatedUsage.input_tokens += response.usage.input_tokens
+        accumulatedUsage.output_tokens += response.usage.output_tokens
+        accumulatedUsage.cache_creation_input_tokens +=
+          (response.usage as unknown as Record<string, number>).cache_creation_input_tokens ?? 0
+        accumulatedUsage.cache_read_input_tokens +=
+          (response.usage as unknown as Record<string, number>).cache_read_input_tokens ?? 0
+
         if (response.stop_reason === 'end_turn') {
           const textBlock = response.content.find(
             (b): b is Anthropic.TextBlock => b.type === 'text',
           )
           const text = textBlock?.text ?? ''
-          console.log(`[claude] response from ${model} (${iterations} iterations, ${continueCount} continues): "${text.slice(0, 100)}${text.length > 100 ? '...' : ''}"`)
-          return { text, toolCalls, model }
+          console.log(`[claude] response (${iterations} iterations, ${continueCount} continues): "${text.slice(0, 100)}${text.length > 100 ? '...' : ''}"`)
+          return { text, toolCalls, usage: accumulatedUsage , model }
         }
 
         if (response.stop_reason === 'tool_use') {
@@ -290,10 +312,10 @@ export async function chat(
         const textBlock = response.content.find(
           (b): b is Anthropic.TextBlock => b.type === 'text',
         )
-        return { text: textBlock?.text ?? '', toolCalls, model }
+        return { text: textBlock?.text ?? '', toolCalls, usage: accumulatedUsage }
       }
 
-      return { text: 'I hit the maximum number of tool iterations. Could you try a simpler request?', toolCalls, model }
+      return { text: 'I hit the maximum number of tool iterations. Could you try a simpler request?', toolCalls, usage: accumulatedUsage , model }
 
     } catch (err) {
       const error = err as { message?: string; error?: { type?: string; message?: string } }
@@ -311,7 +333,7 @@ export async function chat(
           return {
             text: `I've made a lot of progress but need to stop here. I completed ${toolCalls.length} operations. Please ask me to continue if you'd like me to finish.`,
             toolCalls,
-            model,
+            usage: accumulatedUsage,
           }
         }
 
@@ -325,7 +347,7 @@ export async function chat(
     }
   }
 
-  return { text: 'Completed the available operations.', toolCalls, model }
+  return { text: 'Completed the available operations.', toolCalls, usage: accumulatedUsage , model }
 }
 
 export function clearSession(sessionId: string) {

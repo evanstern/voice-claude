@@ -1,0 +1,216 @@
+// Per-interaction cost tracking for STT, Claude, and TTS API calls.
+
+// Pricing rates
+const RATES = {
+  // Whisper: $0.006 per minute of audio
+  whisperPerMinute: 0.006,
+  // Claude Sonnet: $3 per 1M input tokens, $15 per 1M output tokens
+  claudeInputPer1M: 3,
+  claudeOutputPer1M: 15,
+  // Cache tokens: input tokens read from cache are 90% cheaper, write is 25% more
+  claudeCacheReadPer1M: 0.3,
+  claudeCacheWritePer1M: 3.75,
+  // OpenAI TTS (tts-1): $15 per 1M characters
+  ttsCharsPer1M: 15,
+} as const
+
+export interface ClaudeUsage {
+  input_tokens: number
+  output_tokens: number
+  cache_creation_input_tokens?: number
+  cache_read_input_tokens?: number
+}
+
+interface ServiceCosts {
+  stt: number
+  claude: number
+  tts: number
+}
+
+interface SessionStats {
+  interactions: number
+  costs: ServiceCosts
+  sttDurationSec: number
+  claudeInputTokens: number
+  claudeOutputTokens: number
+  claudeCacheReadTokens: number
+  claudeCacheWriteTokens: number
+  ttsChars: number
+}
+
+interface GlobalStats {
+  totalInteractions: number
+  totalCosts: ServiceCosts
+  totalSttDurationSec: number
+  totalClaudeInputTokens: number
+  totalClaudeOutputTokens: number
+  totalClaudeCacheReadTokens: number
+  totalClaudeCacheWriteTokens: number
+  totalTtsChars: number
+  sessions: number
+  startedAt: string
+}
+
+// In-memory state
+const sessionData = new Map<string, SessionStats>()
+let globalStats: GlobalStats = {
+  totalInteractions: 0,
+  totalCosts: { stt: 0, claude: 0, tts: 0 },
+  totalSttDurationSec: 0,
+  totalClaudeInputTokens: 0,
+  totalClaudeOutputTokens: 0,
+  totalClaudeCacheReadTokens: 0,
+  totalClaudeCacheWriteTokens: 0,
+  totalTtsChars: 0,
+  sessions: 0,
+  startedAt: new Date().toISOString(),
+}
+
+// Pending costs for the current interaction (accumulated across calls, logged together)
+const pendingCosts = new Map<
+  string,
+  { stt: number; claude: number; tts: number }
+>()
+
+function ensureSession(sessionId: string): SessionStats {
+  if (!sessionData.has(sessionId)) {
+    globalStats.sessions++
+    sessionData.set(sessionId, {
+      interactions: 0,
+      costs: { stt: 0, claude: 0, tts: 0 },
+      sttDurationSec: 0,
+      claudeInputTokens: 0,
+      claudeOutputTokens: 0,
+      claudeCacheReadTokens: 0,
+      claudeCacheWriteTokens: 0,
+      ttsChars: 0,
+    })
+  }
+  return sessionData.get(sessionId)!
+}
+
+function ensurePending(
+  sessionId: string,
+): { stt: number; claude: number; tts: number } {
+  if (!pendingCosts.has(sessionId)) {
+    pendingCosts.set(sessionId, { stt: 0, claude: 0, tts: 0 })
+  }
+  return pendingCosts.get(sessionId)!
+}
+
+export function recordSTT(sessionId: string, durationSec: number): number {
+  const cost = (durationSec / 60) * RATES.whisperPerMinute
+  const session = ensureSession(sessionId)
+  session.costs.stt += cost
+  session.sttDurationSec += durationSec
+  globalStats.totalCosts.stt += cost
+  globalStats.totalSttDurationSec += durationSec
+
+  const pending = ensurePending(sessionId)
+  pending.stt += cost
+  return cost
+}
+
+export function recordClaude(sessionId: string, usage: ClaudeUsage): number {
+  const inputCost = (usage.input_tokens / 1_000_000) * RATES.claudeInputPer1M
+  const outputCost =
+    (usage.output_tokens / 1_000_000) * RATES.claudeOutputPer1M
+  const cacheReadCost =
+    ((usage.cache_read_input_tokens ?? 0) / 1_000_000) *
+    RATES.claudeCacheReadPer1M
+  const cacheWriteCost =
+    ((usage.cache_creation_input_tokens ?? 0) / 1_000_000) *
+    RATES.claudeCacheWritePer1M
+  const cost = inputCost + outputCost + cacheReadCost + cacheWriteCost
+
+  const session = ensureSession(sessionId)
+  session.costs.claude += cost
+  session.claudeInputTokens += usage.input_tokens
+  session.claudeOutputTokens += usage.output_tokens
+  session.claudeCacheReadTokens += usage.cache_read_input_tokens ?? 0
+  session.claudeCacheWriteTokens += usage.cache_creation_input_tokens ?? 0
+  globalStats.totalCosts.claude += cost
+  globalStats.totalClaudeInputTokens += usage.input_tokens
+  globalStats.totalClaudeOutputTokens += usage.output_tokens
+  globalStats.totalClaudeCacheReadTokens +=
+    usage.cache_read_input_tokens ?? 0
+  globalStats.totalClaudeCacheWriteTokens +=
+    usage.cache_creation_input_tokens ?? 0
+
+  const pending = ensurePending(sessionId)
+  pending.claude += cost
+  return cost
+}
+
+export function recordTTS(sessionId: string, charCount: number): number {
+  const cost = (charCount / 1_000_000) * RATES.ttsCharsPer1M
+  const session = ensureSession(sessionId)
+  session.costs.tts += cost
+  session.ttsChars += charCount
+  globalStats.totalCosts.tts += cost
+  globalStats.totalTtsChars += charCount
+
+  const pending = ensurePending(sessionId)
+  pending.tts += cost
+  return cost
+}
+
+/**
+ * Call after each full interaction (STT + Claude + TTS) to log the cost
+ * summary and increment the interaction counter.
+ */
+export function finalizeInteraction(sessionId: string): void {
+  const session = ensureSession(sessionId)
+  session.interactions++
+  globalStats.totalInteractions++
+
+  const pending = pendingCosts.get(sessionId) ?? { stt: 0, claude: 0, tts: 0 }
+  const total = pending.stt + pending.claude + pending.tts
+
+  console.log(
+    `[cost] interaction #${globalStats.totalInteractions}: ` +
+      `stt=$${pending.stt.toFixed(4)} claude=$${pending.claude.toFixed(4)} tts=$${pending.tts.toFixed(4)} ` +
+      `total=$${total.toFixed(4)} | cumulative=$${(globalStats.totalCosts.stt + globalStats.totalCosts.claude + globalStats.totalCosts.tts).toFixed(4)}`,
+  )
+
+  pendingCosts.delete(sessionId)
+}
+
+export function getStats() {
+  const totalCost =
+    globalStats.totalCosts.stt +
+    globalStats.totalCosts.claude +
+    globalStats.totalCosts.tts
+
+  const avgCostPerInteraction =
+    globalStats.totalInteractions > 0
+      ? totalCost / globalStats.totalInteractions
+      : 0
+
+  const sessionSummaries = Array.from(sessionData.entries()).map(
+    ([id, s]) => ({
+      sessionId: id.slice(0, 8),
+      interactions: s.interactions,
+      totalCost: s.costs.stt + s.costs.claude + s.costs.tts,
+      costs: { ...s.costs },
+    }),
+  )
+
+  return {
+    totalInteractions: globalStats.totalInteractions,
+    totalCost,
+    avgCostPerInteraction,
+    costBreakdown: { ...globalStats.totalCosts },
+    usage: {
+      sttDurationSec: globalStats.totalSttDurationSec,
+      claudeInputTokens: globalStats.totalClaudeInputTokens,
+      claudeOutputTokens: globalStats.totalClaudeOutputTokens,
+      claudeCacheReadTokens: globalStats.totalClaudeCacheReadTokens,
+      claudeCacheWriteTokens: globalStats.totalClaudeCacheWriteTokens,
+      ttsChars: globalStats.totalTtsChars,
+    },
+    sessions: sessionSummaries,
+    activeSessions: sessionData.size,
+    startedAt: globalStats.startedAt,
+  }
+}

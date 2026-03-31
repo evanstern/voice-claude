@@ -1,3 +1,4 @@
+import { getStats } from '../voice/cost-tracker.js'
 import { createRouter, publicProcedure } from './init.js'
 
 export const appRouter = createRouter({
@@ -11,6 +12,9 @@ export const appRouter = createRouter({
       const port = process.env.PORT ?? '4000'
       return { path: '/ws/audio', port: Number.parseInt(port, 10) }
     }),
+  }),
+  stats: publicProcedure.query(() => {
+    return getStats()
   }),
 })
 
