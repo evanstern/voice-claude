@@ -1,5 +1,6 @@
 import { exec } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
+import path from 'node:path'
 import { promisify } from 'node:util'
 
 const execAsync = promisify(exec)
@@ -250,9 +251,11 @@ async function executeTool(
 
     case 'read_file': {
       const filePath = input.path ?? ''
-      const resolved = filePath.startsWith('/')
-        ? filePath
-        : `${WORK_DIR}/${filePath}`
+      const resolvedWorkDir = path.resolve(WORK_DIR)
+      const resolved = path.resolve(WORK_DIR, filePath)
+      if (!resolved.startsWith(resolvedWorkDir)) {
+        return 'Error: access denied — path is outside the working directory'
+      }
       console.log(`[claude] tool read_file: ${resolved}`)
       if (!existsSync(resolved)) {
         return `Error: file not found: ${resolved}`
@@ -344,6 +347,29 @@ export async function chat(
     `[claude] model routing: ${model} (mode=${getModelMode()}, session=${sessionId})`,
   )
 
+  // Retry helper for transient API errors (429 rate-limited, 529 overloaded)
+  const MAX_RETRIES = 3
+  async function createWithRetry(
+    params: Anthropic.MessageCreateParamsNonStreaming,
+  ): Promise<Anthropic.Message> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await anthropic.messages.create(params)
+      } catch (err) {
+        const status = (err as { status?: number }).status
+        if ((status === 429 || status === 529) && attempt < MAX_RETRIES) {
+          const delay = 1000 * 2 ** (attempt - 1) // 1s, 2s, 4s
+          console.log(
+            `[claude] ${status} error on attempt ${attempt}/${MAX_RETRIES}, retrying in ${delay}ms`,
+          )
+          await new Promise((r) => setTimeout(r, delay))
+          continue
+        }
+        throw err
+      }
+    }
+  }
+
   while (continueCount <= MAX_CONTINUES) {
     try {
       let iterations = 0
@@ -355,7 +381,7 @@ export async function chat(
         console.log(
           `[claude] sending request to ${model} (iteration ${iterations}, continue ${continueCount})`,
         )
-        const response = await anthropic.messages.create({
+        const response = await createWithRetry({
           model,
           max_tokens: 4096,
           system: [

@@ -9,9 +9,11 @@ services:
       - .env
     environment:
       PORT: "4000"
+      WORK_DIR: /workspace
       PIPER_URL: http://piper:5000
     volumes:
       - .:/app
+      - ${WORK_DIR:-./workspace}:/workspace
       - /app/node_modules
       - /app/apps/server/node_modules
       - /app/apps/web/node_modules
