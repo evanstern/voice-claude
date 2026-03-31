@@ -306,11 +306,12 @@ export default function Home() {
   ])
 
   // Auto-scroll to bottom when conversation changes (e.g. loading from menu)
+  const conversationLength = conversation.length
   useEffect(() => {
-    if (scrollRef.current) {
+    if (conversationLength > 0 && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, [conversation])
+  }, [conversationLength])
 
   // Play audio cues on phase transitions
   const prevPhaseForSoundRef = useRef(audio.phase)
