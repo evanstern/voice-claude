@@ -2,10 +2,6 @@
 
 ## Project: voice-claude
 
-## Active Worktree: google-cloud-tts
-Scope: Design doc for migrating TTS from OpenAI to Google Cloud.
-Other parallel branches: concise-prompting, selective-tts, prompt-caching, smart-model-routing, local-whisper-design, local-tts-design, cost-monitoring
-
 A hands-free voice interface for Claude Code. The goal: talk to Claude through Bluetooth earbuds (Pixel Buds) on an Android phone while your hands are busy — like working at a bakery — and have Claude working on code, managing repos, and talking back.
 
 ## Origin
