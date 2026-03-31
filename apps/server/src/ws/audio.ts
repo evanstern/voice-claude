@@ -3,6 +3,12 @@ import type { IncomingMessage, Server } from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { chat, clearSession } from '../voice/claude.js'
 import { parseCommand } from '../voice/commands.js'
+import {
+  recordSTT,
+  recordClaude,
+  recordTTS,
+  finalizeInteraction,
+} from '../voice/cost-tracker.js'
 import { transcribe } from '../voice/stt.js'
 import { synthesize } from '../voice/tts.js'
 
@@ -144,7 +150,9 @@ async function handleControl(
 
       let userText: string
       try {
-        userText = await transcribe(combined)
+        const result = await transcribe(combined)
+        userText = result.text
+        recordSTT(sessionId, result.durationSec)
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error'
         console.error(`[ws] stt error  ${message}`)
@@ -185,6 +193,8 @@ async function handleControl(
           send(ws, { type: 'tool_use', name: toolName, input: toolInput })
         })
 
+        recordClaude(sessionId, response.usage)
+
         send(ws, {
           type: 'claude_response',
           text: response.text,
@@ -196,6 +206,7 @@ async function handleControl(
           send(ws, { type: 'synthesizing' })
 
           try {
+            recordTTS(sessionId, response.text.length)
             const audioBuffer = await synthesize(response.text)
             // Send a header so the client knows audio is coming
             send(ws, {
@@ -213,10 +224,13 @@ async function handleControl(
             send(ws, { type: 'tts_error', error: ttsMsg })
           }
         }
+
+        finalizeInteraction(sessionId)
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error'
         console.error(`[ws] claude error  ${message}`)
         send(ws, { type: 'claude_response', text: '', error: message })
+        finalizeInteraction(sessionId)
       }
       break
     }

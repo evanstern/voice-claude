@@ -1,10 +1,15 @@
 import { toFile } from 'openai'
 import { getOpenAIClient } from './openai.js'
 
+export interface TranscriptionResult {
+  text: string
+  durationSec: number
+}
+
 export async function transcribe(
   audioBuffer: Buffer,
   mimeType = 'audio/webm',
-): Promise<string> {
+): Promise<TranscriptionResult> {
   const openai = getOpenAIClient()
 
   const ext = mimeType.includes('webm') ? 'webm' : 'wav'
@@ -18,12 +23,14 @@ export async function transcribe(
   const response = await openai.audio.transcriptions.create({
     model: 'whisper-1',
     file,
-    response_format: 'text',
+    response_format: 'verbose_json',
   })
 
   const elapsed = Date.now() - start
-  const text = typeof response === 'string' ? response.trim() : ''
+  const resp = response as unknown as { text?: string; duration?: number }
+  const text = (resp.text ?? '').trim()
+  const durationSec = resp.duration ?? 0
 
-  console.log(`[stt] result (${elapsed}ms): "${text}"`)
-  return text
+  console.log(`[stt] result (${elapsed}ms, ${durationSec.toFixed(1)}s audio): "${text}"`)
+  return { text, durationSec }
 }
