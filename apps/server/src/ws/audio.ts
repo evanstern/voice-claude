@@ -4,8 +4,9 @@ import { WebSocketServer, type WebSocket } from 'ws'
 import {
   appendMessage,
   autoTitle,
+  getConversation,
 } from '../storage/conversations.js'
-import { chat, clearSession } from '../voice/claude.js'
+import { chat, clearSession, restoreSession } from '../voice/claude.js'
 import { parseCommand } from '../voice/commands.js'
 import {
   recordSTT,
@@ -61,6 +62,19 @@ export function attachWebSocket(httpServer: Server) {
             conversationId = msg.conversationId ?? null
             isFirstMessage = msg.isFirstMessage ?? true
             console.log(`[ws] conversation set to ${conversationId?.slice(0, 8) ?? 'none'}`)
+
+            // Restore Claude session from persisted messages
+            clearSession(sessionId)
+            if (conversationId) {
+              const conv = getConversation(conversationId)
+              if (conv && conv.messages.length > 0) {
+                restoreSession(sessionId, conv.messages.map((m) => ({
+                  role: m.role,
+                  content: m.content,
+                })))
+              }
+            }
+
             send(ws, { type: 'conversation_set', conversationId })
             return
           }
