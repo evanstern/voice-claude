@@ -410,5 +410,5 @@ export function useAudioSocket(wsUrl: string | null) {
   // Expose the mic stream so VAD can attach to it
   const micStream = streamRef.current
 
-  return { ...state, busy, startRecording, stopRecording, micStream }
+  return { ...state, busy, startRecording, stopRecording, micStream, sendConversation }
 }

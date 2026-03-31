@@ -238,7 +238,6 @@ async function handleControl(
             role: 'assistant',
             content: response.text ?? '',
             toolCalls: response.toolCalls,
-            error: undefined,
           })
         }
 

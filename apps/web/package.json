@@ -13,6 +13,7 @@
     "typecheck": "react-router typegen && tsc --noEmit"
   },
   "dependencies": {
+    "@voice-claude/contracts": "workspace:*",
     "@voice-claude/server": "workspace:*",
     "@voice-claude/ui": "workspace:*",
     "@hono/node-server": "^1.18.1",
