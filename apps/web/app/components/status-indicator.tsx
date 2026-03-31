@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { STATUS_PHASE_CONFIG } from '../constants/phase-labels.js'
 
 interface StatusIndicatorProps {
   phase: string
@@ -27,39 +28,14 @@ function formatElapsed(seconds: number): string {
 }
 
 export function StatusIndicator({ phase, activeTools }: StatusIndicatorProps) {
-  let label: string
-  let colorClass: string
-  let showTimer = false
+  const config = STATUS_PHASE_CONFIG[phase]
+  if (!config) return null
 
-  switch (phase) {
-    case 'recording':
-      label = 'Listening...'
-      colorClass = 'bg-red-500'
-      break
-    case 'transcribing':
-      label = 'Transcribing...'
-      colorClass = 'bg-primary'
-      break
-    case 'thinking':
-      label =
-        activeTools.length > 0
-          ? `Running ${activeTools[activeTools.length - 1]}...`
-          : 'Thinking...'
-      colorClass = 'bg-primary'
-      showTimer = true
-      break
-    case 'synthesizing':
-      label = 'Generating speech...'
-      colorClass = 'bg-primary'
-      showTimer = true
-      break
-    case 'speaking':
-      label = 'Speaking...'
-      colorClass = 'bg-green-500'
-      break
-    default:
-      return null
-  }
+  const { colorClass, showTimer } = config
+  const label =
+    phase === 'thinking' && activeTools.length > 0
+      ? `Running ${activeTools[activeTools.length - 1]}...`
+      : config.label
 
   const isProcessing = phase === 'thinking' || phase === 'synthesizing'
   const elapsed = useElapsedSeconds(isProcessing)
