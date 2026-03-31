@@ -11,7 +11,6 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/server/package.json ./apps/server/
 COPY apps/web/package.json ./apps/web/
 COPY packages/contracts/package.json ./packages/contracts/
-COPY packages/shared/package.json ./packages/shared/
 COPY packages/ui/package.json ./packages/ui/
 
 RUN pnpm install --frozen-lockfile
@@ -43,8 +42,6 @@ WORKDIR /app
 COPY --from=deps /app/node_modules/ ./node_modules/
 COPY --from=deps /app/apps/server/node_modules/ ./apps/server/node_modules/
 COPY --from=deps /app/packages/contracts/node_modules/ ./packages/contracts/node_modules/
-COPY --from=deps /app/packages/shared/node_modules/ ./packages/shared/node_modules/
-
 # Copy package manifests for pnpm workspace resolution
 COPY --from=build /app/package.json ./
 COPY --from=build /app/pnpm-workspace.yaml ./
@@ -58,7 +55,6 @@ COPY --from=build /app/apps/server/tsconfig.json ./apps/server/
 
 # Copy workspace packages (they export raw .ts, consumed via tsx)
 COPY --from=build /app/packages/contracts/ ./packages/contracts/
-COPY --from=build /app/packages/shared/ ./packages/shared/
 
 EXPOSE 4000
 
