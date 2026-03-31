@@ -139,10 +139,26 @@ export async function chat(
         const response = await anthropic.messages.create({
           model: 'claude-sonnet-4-5',
           max_tokens: 4096,
-          system: SYSTEM_PROMPT,
+          system: [
+            {
+              type: 'text',
+              text: SYSTEM_PROMPT,
+              cache_control: { type: 'ephemeral' },
+            },
+          ],
           tools,
           messages,
         })
+
+        // Log prompt caching stats
+        const usage = response.usage as Record<string, number | undefined>
+        const cacheRead = usage.cache_read_input_tokens ?? 0
+        const cacheCreation = usage.cache_creation_input_tokens ?? 0
+        if (cacheRead > 0 || cacheCreation > 0) {
+          console.log(
+            `[claude] cache stats: read=${cacheRead} tokens, creation=${cacheCreation} tokens, input=${usage.input_tokens ?? 0} tokens`,
+          )
+        }
 
         messages.push({ role: 'assistant', content: response.content })
 
