@@ -1,5 +1,5 @@
 import type { ConversationSummary } from '@voice-claude/contracts'
-import { Button } from '@voice-claude/ui/components/Button'
+import { Button } from '@voice-claude/ui/components/button'
 
 interface ConversationListProps {
   open: boolean
