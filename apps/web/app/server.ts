@@ -2,6 +2,8 @@ import { createHonoServer } from 'react-router-hono-server/node'
 
 export default await createHonoServer({
   configure(app) {
+    app.get('/health', (c) => c.json({ status: 'ok' }))
+
     const serverUrl = process.env.SERVER_URL ?? 'http://localhost:4000'
 
     app.all('/trpc/*', async (c) => {
