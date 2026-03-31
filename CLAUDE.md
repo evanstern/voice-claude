@@ -2,6 +2,10 @@
 
 ## Project: voice-claude
 
+## Active Worktree: local-tts-design
+Scope: Design doc for running TTS locally on a self-hosted VM.
+Other parallel branches: concise-prompting, selective-tts, prompt-caching, google-cloud-tts, smart-model-routing, local-whisper-design, cost-monitoring
+
 A hands-free voice interface for Claude Code. The goal: talk to Claude through Bluetooth earbuds (Pixel Buds) on an Android phone while your hands are busy — like working at a bakery — and have Claude working on code, managing repos, and talking back.
 
 ## Origin
