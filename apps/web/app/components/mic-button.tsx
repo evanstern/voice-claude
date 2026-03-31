@@ -17,6 +17,7 @@ function MicIcon({ className }: { className?: string }) {
       strokeWidth={1.5}
       stroke="currentColor"
     >
+      <title>Microphone</title>
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -35,6 +36,7 @@ function StopIcon({ className }: { className?: string }) {
       strokeWidth={1.5}
       stroke="currentColor"
     >
+      <title>Stop</title>
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -81,7 +83,9 @@ export function MicButton({
   return (
     <div className="sticky bottom-0 z-20 flex flex-col items-center gap-2 pb-6 pt-3 bg-gradient-to-t from-background via-background to-transparent">
       <span className="text-xs text-muted-foreground">
-        {!connected ? 'Connecting...' : (hints[phase] ?? hints.idle ?? 'Tap or hold space')}
+        {!connected
+          ? 'Connecting...'
+          : (hints[phase] ?? hints.idle ?? 'Tap or hold space')}
       </span>
       <div className="flex items-center gap-4">
         <button

@@ -1,5 +1,12 @@
 import { randomUUID } from 'node:crypto'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import type { ConversationSummary, Message } from '@voice-claude/contracts'
 
@@ -31,7 +38,11 @@ function appendJsonl(filePath: string, obj: unknown) {
 }
 
 function rewriteIndex(entries: ConversationSummary[]) {
-  writeFileSync(INDEX_FILE, entries.map((e) => JSON.stringify(e)).join('\n') + (entries.length ? '\n' : ''))
+  writeFileSync(
+    INDEX_FILE,
+    entries.map((e) => JSON.stringify(e)).join('\n') +
+      (entries.length ? '\n' : ''),
+  )
 }
 
 // ── Public API ──────────────────────────────────────────────────
@@ -58,7 +69,9 @@ export function createConversation(title?: string): ConversationSummary {
   return summary
 }
 
-export function getConversation(id: string): { summary: ConversationSummary; messages: Message[] } | null {
+export function getConversation(
+  id: string,
+): { summary: ConversationSummary; messages: Message[] } | null {
   ensureDataDir()
   const entries = readJsonlLines<ConversationSummary>(INDEX_FILE)
   const summary = entries.find((e) => e.id === id)
@@ -67,7 +80,10 @@ export function getConversation(id: string): { summary: ConversationSummary; mes
   return { summary, messages }
 }
 
-export function appendMessage(conversationId: string, message: Omit<Message, 'id' | 'timestamp'>): Message {
+export function appendMessage(
+  conversationId: string,
+  message: Omit<Message, 'id' | 'timestamp'>,
+): Message {
   ensureDataDir()
   const full: Message = {
     ...message,
@@ -113,6 +129,7 @@ export function updateConversationTitle(id: string, title: string): boolean {
 }
 
 export function autoTitle(conversationId: string, firstUserMessage: string) {
-  const title = firstUserMessage.slice(0, 60) + (firstUserMessage.length > 60 ? '…' : '')
+  const title =
+    firstUserMessage.slice(0, 60) + (firstUserMessage.length > 60 ? '…' : '')
   updateConversationTitle(conversationId, title)
 }

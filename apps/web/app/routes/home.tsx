@@ -297,7 +297,7 @@ export default function Home() {
 
   useEffect(() => {
     scrollToBottom()
-  }, [conversation, pendingEntry, audio.phase, scrollToBottom])
+  }, [scrollToBottom])
 
   // Play audio cues on phase transitions
   const prevPhaseForSoundRef = useRef(audio.phase)
@@ -421,6 +421,7 @@ export default function Home() {
                   strokeWidth={1.5}
                   stroke="currentColor"
                 >
+                  <title>Microphone</title>
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -438,14 +439,12 @@ export default function Home() {
             <div key={entry.id} className="flex flex-col gap-3">
               {(entry.userText || entry.userError) && (
                 <ChatMessage
-                  role="user"
                   content={entry.userText || 'No speech detected'}
                   error={entry.userError}
                 />
               )}
               {(entry.assistantText || entry.assistantError) && (
                 <ChatMessage
-                  role="assistant"
                   content={entry.assistantText ?? ''}
                   error={entry.assistantError}
                   toolCalls={entry.toolCalls}
@@ -457,7 +456,6 @@ export default function Home() {
           {pendingEntry && (
             <div className="flex flex-col gap-3">
               <ChatMessage
-                role="user"
                 content={pendingEntry.userText || 'No speech detected'}
                 error={pendingEntry.userError}
               />

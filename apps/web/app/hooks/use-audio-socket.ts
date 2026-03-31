@@ -92,7 +92,11 @@ export function useAudioSocket(wsUrl: string | null) {
     if (!wsUrl) return
 
     // If we already have a connection to this URL, don't recreate it
-    if (wsRef.current && currentUrlRef.current === wsUrl && wsRef.current.readyState !== WebSocket.CLOSED) {
+    if (
+      wsRef.current &&
+      currentUrlRef.current === wsUrl &&
+      wsRef.current.readyState !== WebSocket.CLOSED
+    ) {
       console.log('[audio] reusing existing WebSocket connection')
       return
     }
@@ -122,7 +126,9 @@ export function useAudioSocket(wsUrl: string | null) {
         }
         expectingAudioRef.current = false
         const bytes = event.data.byteLength
-        console.log(`[audio] received TTS audio: ${(bytes / 1024).toFixed(1)} KB`)
+        console.log(
+          `[audio] received TTS audio: ${(bytes / 1024).toFixed(1)} KB`,
+        )
 
         setState((s) => ({ ...s, phase: 'speaking' }))
         const playbackPromise = playAudio(event.data, audioFormatRef.current)
@@ -134,7 +140,7 @@ export function useAudioSocket(wsUrl: string | null) {
             console.error('[audio] playback error:', err)
             setState((s) => ({ ...s, phase: 'done' }))
           })
-        
+
         // Store playback promise so it can complete even after hot reload
         audioPlaybackRef.current = playbackPromise
         return
@@ -287,7 +293,7 @@ export function useAudioSocket(wsUrl: string | null) {
       // Only close on true unmount (when component is removed from DOM)
       // Don't close on hot reload or re-render
       console.log('[audio] cleanup called - checking if should close')
-      
+
       // We'll only actually close if the URL is changing or component unmounting
       // React will call this again with the new URL if needed
     }
@@ -439,5 +445,13 @@ export function useAudioSocket(wsUrl: string | null) {
   // Expose the mic stream so VAD can attach to it
   const micStream = streamRef.current
 
-  return { ...state, busy, startRecording, stopRecording, cancelRecording, micStream, sendConversation }
+  return {
+    ...state,
+    busy,
+    startRecording,
+    stopRecording,
+    cancelRecording,
+    micStream,
+    sendConversation,
+  }
 }
