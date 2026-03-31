@@ -144,6 +144,7 @@ export default function Home() {
   }, [trpc, refreshConversations, navigate])
 
   // Load conversation data when activeConversationId changes (URL-driven)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: audio.sendConversation is a stable useCallback
   useEffect(() => {
     let cancelled = false
 
