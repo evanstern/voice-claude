@@ -39,10 +39,32 @@ function send(ws: WebSocket, msg: Record<string, unknown>) {
   }
 }
 
+function verifyAuth(req: IncomingMessage): boolean {
+  const authSecret = process.env.AUTH_SECRET
+  if (!authSecret) return true
+
+  const authHeader = req.headers.authorization
+  if (authHeader === `Bearer ${authSecret}`) return true
+
+  const url = new URL(
+    req.url ?? '/',
+    `http://${req.headers.host ?? 'localhost'}`,
+  )
+  const token = url.searchParams.get('token')
+  if (token === authSecret) return true
+
+  return false
+}
+
 export function attachWebSocket(httpServer: Server) {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws/audio' })
 
   wss.on('connection', (ws, req: IncomingMessage) => {
+    if (!verifyAuth(req)) {
+      ws.close(4001, 'Unauthorized')
+      return
+    }
+
     const client = req.socket.remoteAddress ?? 'unknown'
     const sessionId = randomUUID()
     const connectedAt = Date.now()
