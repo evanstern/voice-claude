@@ -1,11 +1,15 @@
+import type { ConversationSummary } from '@voice-claude/contracts'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router'
 import { ChatMessage } from '../components/chat-message.js'
 import { ConnectionHeader } from '../components/connection-header.js'
+import { ConversationList } from '../components/conversation-list.js'
 import { MicButton } from '../components/mic-button.js'
 import { StatusIndicator } from '../components/status-indicator.js'
 import { useAudioSocket } from '../hooks/use-audio-socket.js'
 import { useSoundEffects } from '../hooks/use-sound-effects.js'
+import { useVAD } from '../hooks/use-vad.js'
+import { getClientTRPC } from '../trpc/client.js'
 
 interface RootContext {
   health: { status: string; timestamp: string } | null
@@ -40,18 +44,183 @@ export default function Home() {
     return `${protocol}//${window.location.hostname}:${wsConfig.port}${wsConfig.path}`
   }, [wsConfig])
 
+  const trpc = useMemo(() => {
+    if (typeof window === 'undefined' || !wsConfig) return null
+    return getClientTRPC(wsConfig.port)
+  }, [wsConfig])
+
   const audio = useAudioSocket(wsUrl)
   const { play } = useSoundEffects()
   const phaseRef = useRef(audio.phase)
   const spaceDownRef = useRef(false)
+
+  // Mode: push-to-talk (default) or auto (always-listening with VAD)
+  const [mode, setMode] = useState<'push-to-talk' | 'auto'>('push-to-talk')
+  const toggleMode = useCallback(() => {
+    setMode((m) => (m === 'push-to-talk' ? 'auto' : 'push-to-talk'))
+  }, [])
+
+  // VAD for auto mode
+  const vad = useVAD(mode === 'auto' ? audio.micStream : null, {
+    silenceThreshold: 0.01,
+    silenceTimeout: 1500,
+  })
+
+  // In auto mode, start recording when connected and idle
+  useEffect(() => {
+    if (
+      mode === 'auto' &&
+      audio.connected &&
+      (audio.phase === 'idle' || audio.phase === 'done') &&
+      !audio.busy
+    ) {
+      audio.startRecording()
+    }
+  }, [mode, audio.connected, audio.phase, audio.busy, audio.startRecording])
+
+  // In auto mode, stop recording when VAD detects silence after speech
+  useEffect(() => {
+    if (mode !== 'auto') return
+    vad.setOnSpeechEnd(() => {
+      if (audio.phase === 'recording') {
+        console.log('[auto] VAD detected speech end, sending...')
+        audio.stopRecording()
+      }
+    })
+    return () => vad.setOnSpeechEnd(null)
+  }, [mode, vad, audio])
   const scrollRef = useRef<HTMLDivElement>(null)
   const nextIdRef = useRef(1)
 
-  // Conversation history
+  // Conversation history (in-memory for current session)
   const [conversation, setConversation] = useState<ConversationEntry[]>([])
   const [pendingEntry, setPendingEntry] = useState<ConversationEntry | null>(
     null,
   )
+
+  // Conversation management
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [conversations, setConversations] = useState<ConversationSummary[]>([])
+  const [activeConversationId, setActiveConversationId] = useState<
+    string | null
+  >(null)
+  const isFirstMessageRef = useRef(true)
+
+  // Fetch conversation list
+  const refreshConversations = useCallback(async () => {
+    if (!trpc) return
+    try {
+      const list = await trpc.conversations.list.query()
+      setConversations(list)
+    } catch (err) {
+      console.error('[home] failed to fetch conversations:', err)
+    }
+  }, [trpc])
+
+  // Fetch on mount
+  useEffect(() => {
+    refreshConversations()
+  }, [refreshConversations])
+
+  // Create a new conversation and tell the server about it
+  const createNewConversation = useCallback(async () => {
+    if (!trpc) return
+    try {
+      const conv = await trpc.conversations.create.mutate()
+      setActiveConversationId(conv.id)
+      isFirstMessageRef.current = true
+      setConversation([])
+      setPendingEntry(null)
+      nextIdRef.current = 1
+      audio.sendConversation(conv.id, true)
+      refreshConversations()
+      setDrawerOpen(false)
+    } catch (err) {
+      console.error('[home] failed to create conversation:', err)
+    }
+  }, [trpc, audio, refreshConversations])
+
+  // Select existing conversation and load its messages
+  const selectConversation = useCallback(
+    async (id: string) => {
+      if (!trpc) return
+      try {
+        const data = await trpc.conversations.get.query({ id })
+        if (!data) return
+        setActiveConversationId(id)
+        isFirstMessageRef.current = data.messages.length === 0
+
+        // Convert persisted messages to ConversationEntry pairs
+        const entries: ConversationEntry[] = []
+        let entryId = 1
+        const msgs = data.messages
+        for (let i = 0; i < msgs.length; i++) {
+          const msg = msgs[i]
+          if (!msg) continue
+          if (msg.role === 'user') {
+            const next = msgs[i + 1]
+            const entry: ConversationEntry = {
+              id: entryId++,
+              userText: msg.content,
+              userError: msg.error ?? null,
+            }
+            if (next?.role === 'assistant') {
+              entry.assistantText = next.content
+              entry.assistantError = next.error ?? null
+              entry.toolCalls = next.toolCalls
+              i++ // skip assistant message
+            }
+            entries.push(entry)
+          }
+        }
+        setConversation(entries)
+        setPendingEntry(null)
+        nextIdRef.current = entryId
+        audio.sendConversation(id, isFirstMessageRef.current)
+        setDrawerOpen(false)
+      } catch (err) {
+        console.error('[home] failed to load conversation:', err)
+      }
+    },
+    [trpc, audio],
+  )
+
+  // Delete conversation
+  const deleteConversation = useCallback(
+    async (id: string) => {
+      if (!trpc) return
+      try {
+        await trpc.conversations.delete.mutate({ id })
+        if (activeConversationId === id) {
+          setActiveConversationId(null)
+          setConversation([])
+          setPendingEntry(null)
+          nextIdRef.current = 1
+          audio.sendConversation(null, true)
+        }
+        refreshConversations()
+      } catch (err) {
+        console.error('[home] failed to delete conversation:', err)
+      }
+    },
+    [trpc, activeConversationId, audio, refreshConversations],
+  )
+
+  // Auto-create conversation on first recording if none active
+  const handleStartRecording = useCallback(async () => {
+    if (!activeConversationId && trpc) {
+      try {
+        const conv = await trpc.conversations.create.mutate()
+        setActiveConversationId(conv.id)
+        isFirstMessageRef.current = true
+        audio.sendConversation(conv.id, true)
+        refreshConversations()
+      } catch (err) {
+        console.error('[home] failed to auto-create conversation:', err)
+      }
+    }
+    audio.startRecording()
+  }, [activeConversationId, trpc, audio, refreshConversations])
 
   // When transcription arrives, start a new pending entry
   const prevTranscriptionRef = useRef<string | null>(null)
@@ -95,6 +264,9 @@ export default function Home() {
         }
         setConversation((prev) => [...prev, finalized])
         setPendingEntry(null)
+        isFirstMessageRef.current = false
+        // Refresh list to pick up auto-title and updated timestamps
+        refreshConversations()
       }
     }
     phaseRef.current = audio.phase
@@ -104,6 +276,7 @@ export default function Home() {
     audio.claudeError,
     audio.toolCalls,
     pendingEntry,
+    refreshConversations,
   ])
 
   // Auto-scroll to bottom
@@ -161,7 +334,7 @@ export default function Home() {
         audio.connected &&
         !audio.busy
       ) {
-        audio.startRecording()
+        handleStartRecording()
       }
     }
 
@@ -183,7 +356,7 @@ export default function Home() {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [audio])
+  }, [audio, handleStartRecording])
 
   const showStatus =
     audio.phase === 'recording' ||
@@ -196,6 +369,17 @@ export default function Home() {
 
   return (
     <div className="flex flex-col h-dvh max-w-2xl mx-auto">
+      {/* Conversation drawer */}
+      <ConversationList
+        open={drawerOpen}
+        conversations={conversations}
+        activeId={activeConversationId}
+        onSelect={selectConversation}
+        onNew={createNewConversation}
+        onDelete={deleteConversation}
+        onClose={() => setDrawerOpen(false)}
+      />
+
       {/* Voice command toast */}
       {audio.commandNotice && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 animate-fade-in-up">
@@ -209,6 +393,7 @@ export default function Home() {
       <ConnectionHeader
         apiConnected={health?.status === 'ok'}
         wsConnected={audio.connected}
+        onMenuToggle={() => setDrawerOpen((o) => !o)}
       />
 
       {/* Scrollable chat area */}
@@ -283,8 +468,10 @@ export default function Home() {
         phase={audio.phase}
         connected={audio.connected}
         busy={audio.busy}
-        onStart={audio.startRecording}
+        mode={mode}
+        onStart={handleStartRecording}
         onStop={audio.stopRecording}
+        onToggleMode={toggleMode}
       />
     </div>
   )
