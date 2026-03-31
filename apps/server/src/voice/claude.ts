@@ -1,5 +1,6 @@
 import { exec } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
+import path from 'node:path'
 import { promisify } from 'node:util'
 
 const execAsync = promisify(exec)
@@ -118,6 +119,59 @@ function pickModel(sessionId: string, userText: string): string {
 // --- End model routing ---
 
 const WORK_DIR = process.env.WORK_DIR ?? process.cwd()
+
+// --- Command blocklist ---
+
+const BLOCKED_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
+  {
+    pattern: /rm\s+-[^\s]*r[^\s]*f[^\s]*\s+\/\s*$/,
+    reason: 'Refusing to rm -rf /',
+  },
+  {
+    pattern: /rm\s+-[^\s]*r[^\s]*f[^\s]*\s+~\s*$/,
+    reason: 'Refusing to rm -rf home directory',
+  },
+  { pattern: /\bsudo\b/, reason: 'sudo is not allowed' },
+  {
+    pattern: /\b(curl|wget)\b.*\|\s*(sh|bash|zsh)\b/,
+    reason: 'Piped remote execution is not allowed',
+  },
+  {
+    pattern: /(^|\||\;|\&\&)\s*eval\s/,
+    reason: 'eval is not allowed',
+  },
+  {
+    pattern: /(^|\||\;|\&\&)\s*exec\s/,
+    reason: 'exec is not allowed',
+  },
+  { pattern: /\bmkfs\b/, reason: 'mkfs is not allowed' },
+  { pattern: /\bdd\s+if=/, reason: 'dd is not allowed' },
+  {
+    pattern: /:\(\)\s*\{\s*:\|:\s*&\s*\}\s*;?\s*:/,
+    reason: 'Fork bomb detected',
+  },
+  {
+    pattern: /\bchmod\s+777\s+\//,
+    reason: 'chmod 777 on system paths is not allowed',
+  },
+  {
+    pattern: /\bchown\b.*\s+\/(bin|sbin|usr|etc|var|lib|boot|sys|proc|dev)\b/,
+    reason: 'chown on system paths is not allowed',
+  },
+  {
+    pattern: /^\s*>/,
+    reason: 'Truncating files with > redirection is not allowed',
+  },
+]
+
+function isCommandBlocked(cmd: string): string | null {
+  for (const { pattern, reason } of BLOCKED_PATTERNS) {
+    if (pattern.test(cmd)) {
+      return reason
+    }
+  }
+  return null
+}
 const SYSTEM_PROMPT = `You are a hands-free voice coding assistant called Voice Claude. You run as a web app that the user accesses from their phone or computer. You can hear them speak through their microphone — their speech is transcribed and sent to you. Your responses are spoken back to them via text-to-speech. This is a live, real-time voice conversation.
 
 When the user says things like "can you hear me" or "are you there", respond naturally — you can hear them. If they ask what you are, explain that you're a voice interface for Claude that can help with coding tasks hands-free.
@@ -177,6 +231,11 @@ async function executeTool(
     case 'run_shell': {
       const cmd = input.command ?? ''
       console.log(`[claude] tool run_shell: ${cmd}`)
+      const blocked = isCommandBlocked(cmd)
+      if (blocked) {
+        console.log(`[claude] blocked command: ${cmd}`)
+        return `Error: ${blocked}`
+      }
       try {
         const { stdout } = await execAsync(cmd, {
           cwd: WORK_DIR,
@@ -192,9 +251,11 @@ async function executeTool(
 
     case 'read_file': {
       const filePath = input.path ?? ''
-      const resolved = filePath.startsWith('/')
-        ? filePath
-        : `${WORK_DIR}/${filePath}`
+      const resolvedWorkDir = path.resolve(WORK_DIR)
+      const resolved = path.resolve(WORK_DIR, filePath)
+      if (!resolved.startsWith(resolvedWorkDir)) {
+        return 'Error: access denied — path is outside the working directory'
+      }
       console.log(`[claude] tool read_file: ${resolved}`)
       if (!existsSync(resolved)) {
         return `Error: file not found: ${resolved}`
@@ -286,6 +347,29 @@ export async function chat(
     `[claude] model routing: ${model} (mode=${getModelMode()}, session=${sessionId})`,
   )
 
+  // Retry helper for transient API errors (429 rate-limited, 529 overloaded)
+  const MAX_RETRIES = 3
+  async function createWithRetry(
+    params: Anthropic.MessageCreateParamsNonStreaming,
+  ): Promise<Anthropic.Message> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await anthropic.messages.create(params)
+      } catch (err) {
+        const status = (err as { status?: number }).status
+        if ((status === 429 || status === 529) && attempt < MAX_RETRIES) {
+          const delay = 1000 * 2 ** (attempt - 1) // 1s, 2s, 4s
+          console.log(
+            `[claude] ${status} error on attempt ${attempt}/${MAX_RETRIES}, retrying in ${delay}ms`,
+          )
+          await new Promise((r) => setTimeout(r, delay))
+          continue
+        }
+        throw err
+      }
+    }
+  }
+
   while (continueCount <= MAX_CONTINUES) {
     try {
       let iterations = 0
@@ -297,7 +381,7 @@ export async function chat(
         console.log(
           `[claude] sending request to ${model} (iteration ${iterations}, continue ${continueCount})`,
         )
-        const response = await anthropic.messages.create({
+        const response = await createWithRetry({
           model,
           max_tokens: 4096,
           system: [
