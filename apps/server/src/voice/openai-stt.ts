@@ -5,7 +5,10 @@ import type { STTProvider, STTResult } from './stt-provider.js'
 export class OpenAISTTProvider implements STTProvider {
   readonly name = 'openai'
 
-  async transcribe(audioBuffer: Buffer, mimeType = 'audio/webm'): Promise<STTResult> {
+  async transcribe(
+    audioBuffer: Buffer,
+    mimeType = 'audio/webm',
+  ): Promise<STTResult> {
     const openai = getOpenAIClient()
 
     const ext = mimeType.includes('webm') ? 'webm' : 'wav'
@@ -27,7 +30,9 @@ export class OpenAISTTProvider implements STTProvider {
     const text = (resp.text ?? '').trim()
     const durationSec = resp.duration ?? 0
 
-    console.log(`[stt:openai] result (${elapsed}ms, ${durationSec.toFixed(1)}s audio): "${text}"`)
+    console.log(
+      `[stt:openai] result (${elapsed}ms, ${durationSec.toFixed(1)}s audio): "${text}"`,
+    )
     return { text, durationSec }
   }
 }

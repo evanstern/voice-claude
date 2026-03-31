@@ -23,7 +23,10 @@ export class LocalSTTProvider implements STTProvider {
     }
   }
 
-  async transcribe(audioBuffer: Buffer, mimeType = 'audio/webm'): Promise<STTResult> {
+  async transcribe(
+    audioBuffer: Buffer,
+    mimeType = 'audio/webm',
+  ): Promise<STTResult> {
     const tempDir = await mkdtemp(join(tmpdir(), 'stt-'))
     const inputPath = join(tempDir, 'input.webm')
     const wavPath = join(tempDir, 'input.wav')
@@ -99,9 +102,7 @@ export class LocalSTTProvider implements STTProvider {
       // Fall back to parsing plain text output from stdout
       // whisper-cpp plain output: "[00:00:00.000 --> 00:00:05.000]  Hello world"
       // With --no-timestamps it outputs just the text
-      text = stdout
-        .replace(/\[[\d:.]+\s*-->\s*[\d:.]+\]\s*/g, '')
-        .trim()
+      text = stdout.replace(/\[[\d:.]+\s*-->\s*[\d:.]+\]\s*/g, '').trim()
     }
 
     return { text, durationSec }

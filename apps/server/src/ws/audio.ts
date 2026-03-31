@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, Server } from 'node:http'
-import { WebSocketServer, type WebSocket } from 'ws'
+import { type WebSocket, WebSocketServer } from 'ws'
 import {
   appendMessage,
   autoTitle,
@@ -9,10 +9,10 @@ import {
 import { chat, clearSession, restoreSession } from '../voice/claude.js'
 import { parseCommand } from '../voice/commands.js'
 import {
-  recordSTT,
-  recordClaude,
-  recordTTS,
   finalizeInteraction,
+  recordClaude,
+  recordSTT,
+  recordTTS,
 } from '../voice/cost-tracker.js'
 import { transcribe } from '../voice/stt.js'
 import { filterForTTS } from '../voice/text-filter.js'
@@ -50,7 +50,9 @@ export function attachWebSocket(httpServer: Server) {
     let conversationId: string | null = null
     let isFirstMessage = true
 
-    console.log(`[ws] connected  client=${client} session=${sessionId.slice(0, 8)}`)
+    console.log(
+      `[ws] connected  client=${client} session=${sessionId.slice(0, 8)}`,
+    )
 
     ws.on('message', (data, isBinary) => {
       if (!isBinary) {
@@ -61,17 +63,22 @@ export function attachWebSocket(httpServer: Server) {
           if (msg.type === 'set_conversation') {
             conversationId = msg.conversationId ?? null
             isFirstMessage = msg.isFirstMessage ?? true
-            console.log(`[ws] conversation set to ${conversationId?.slice(0, 8) ?? 'none'}`)
+            console.log(
+              `[ws] conversation set to ${conversationId?.slice(0, 8) ?? 'none'}`,
+            )
 
             // Restore Claude session from persisted messages
             clearSession(sessionId)
             if (conversationId) {
               const conv = getConversation(conversationId)
               if (conv && conv.messages.length > 0) {
-                restoreSession(sessionId, conv.messages.map((m) => ({
-                  role: m.role,
-                  content: m.content,
-                })))
+                restoreSession(
+                  sessionId,
+                  conv.messages.map((m) => ({
+                    role: m.role,
+                    content: m.content,
+                  })),
+                )
               }
             }
 
@@ -98,7 +105,7 @@ export function attachWebSocket(httpServer: Server) {
 
       if (chunkCount === 0) {
         streamStartedAt = Date.now()
-        console.log(`[ws] stream     started`)
+        console.log('[ws] stream     started')
       }
 
       chunkCount++
@@ -123,9 +130,7 @@ export function attachWebSocket(httpServer: Server) {
 
     ws.on('close', (code) => {
       const duration = elapsed(connectedAt)
-      const streamDuration = streamStartedAt
-        ? elapsed(streamStartedAt)
-        : 'n/a'
+      const streamDuration = streamStartedAt ? elapsed(streamStartedAt) : 'n/a'
       const avgChunkSize =
         chunkCount > 0
           ? formatBytes(Math.round(totalBytes / chunkCount))
@@ -133,13 +138,7 @@ export function attachWebSocket(httpServer: Server) {
 
       console.log(`[ws] closed     code=${code}`)
       console.log(
-        `[ws] ─── session summary ───────────────────\n` +
-          `[ws]   connection duration : ${duration}\n` +
-          `[ws]   stream duration     : ${streamDuration}\n` +
-          `[ws]   chunks received     : ${chunkCount}\n` +
-          `[ws]   total data          : ${formatBytes(totalBytes)}\n` +
-          `[ws]   avg chunk size      : ${avgChunkSize}\n` +
-          `[ws] ──────────────────────────────────────`,
+        `[ws] ─── session summary ───────────────────\n[ws]   connection duration : ${duration}\n[ws]   stream duration     : ${streamDuration}\n[ws]   chunks received     : ${chunkCount}\n[ws]   total data          : ${formatBytes(totalBytes)}\n[ws]   avg chunk size      : ${avgChunkSize}\n[ws] ──────────────────────────────────────`,
       )
     })
 
@@ -178,9 +177,19 @@ async function handleControl(
       break
 
     case 'stop': {
-      const { audioChunks, resetAudio, conversationId, isFirstMessage, setFirstMessage } = getAudioState()
+      const {
+        audioChunks,
+        resetAudio,
+        conversationId,
+        isFirstMessage,
+        setFirstMessage,
+      } = getAudioState()
       if (audioChunks.length === 0) {
-        send(ws, { type: 'transcription', text: '', error: 'No audio received' })
+        send(ws, {
+          type: 'transcription',
+          text: '',
+          error: 'No audio received',
+        })
         break
       }
 
@@ -206,14 +215,16 @@ async function handleControl(
       const { command, text: cleanedText } = parseCommand(userText)
 
       if (command === 'disregard') {
-        console.log(`[ws] command    disregard — dropping message`)
+        console.log('[ws] command    disregard — dropping message')
         send(ws, { type: 'transcription', text: userText })
         send(ws, { type: 'command', command: 'disregard' })
         break
       }
 
       if (command === 'clear') {
-        console.log(`[ws] command    clear — resetting session ${sessionId.slice(0, 8)}`)
+        console.log(
+          `[ws] command    clear — resetting session ${sessionId.slice(0, 8)}`,
+        )
         clearSession(sessionId)
         send(ws, { type: 'transcription', text: userText })
         send(ws, { type: 'command', command: 'clear' })
@@ -240,9 +251,13 @@ async function handleControl(
       send(ws, { type: 'thinking' })
 
       try {
-        const response = await chat(sessionId, userText, (toolName, toolInput) => {
-          send(ws, { type: 'tool_use', name: toolName, input: toolInput })
-        })
+        const response = await chat(
+          sessionId,
+          userText,
+          (toolName, toolInput) => {
+            send(ws, { type: 'tool_use', name: toolName, input: toolInput })
+          },
+        )
 
         recordClaude(sessionId, response.usage)
 
@@ -282,7 +297,8 @@ async function handleControl(
               ws.send(audioBuffer)
             }
           } catch (ttsErr) {
-            const ttsMsg = ttsErr instanceof Error ? ttsErr.message : 'Unknown error'
+            const ttsMsg =
+              ttsErr instanceof Error ? ttsErr.message : 'Unknown error'
             console.error(`[ws] tts error  ${ttsMsg}`)
             send(ws, { type: 'tts_error', error: ttsMsg })
           }

@@ -1,5 +1,5 @@
-import type { AppRouter } from '@voice-claude/server/trpc/router'
 import { createTRPCClient, httpBatchLink } from '@trpc/client'
+import type { AppRouter } from '@voice-claude/server/trpc/router'
 
 let _client: ReturnType<typeof createTRPCClient<AppRouter>> | null = null
 let _currentPort: number | null = null

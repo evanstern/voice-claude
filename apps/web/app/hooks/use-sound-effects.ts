@@ -1,6 +1,10 @@
 import { useCallback, useRef } from 'react'
 
-type SoundName = 'recordingStarted' | 'messageSent' | 'error' | 'commandAcknowledged'
+type SoundName =
+  | 'recordingStarted'
+  | 'messageSent'
+  | 'error'
+  | 'commandAcknowledged'
 
 /**
  * Synthesize short audio cues using the Web Audio API.
