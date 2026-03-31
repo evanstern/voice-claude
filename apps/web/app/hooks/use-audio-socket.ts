@@ -27,6 +27,7 @@ type ProcessingPhase =
 
 interface AudioSocketState {
   connected: boolean
+  reconnecting: boolean
   phase: ProcessingPhase
   chunksReceived: number
   totalBytes: number
@@ -38,6 +39,10 @@ interface AudioSocketState {
   activeTools: string[]
   commandNotice: string | null
 }
+
+const RECONNECT_BASE_DELAY = 1000
+const RECONNECT_MAX_DELAY = 30000
+const RECONNECT_MAX_ATTEMPTS = 10
 
 function playAudio(data: ArrayBuffer, format = 'mp3'): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -72,8 +77,14 @@ export function useAudioSocket(wsUrl: string | null) {
   const audioFormatRef = useRef('mp3')
   const audioPlaybackRef = useRef<Promise<void> | null>(null)
 
+  const reconnectAttemptRef = useRef(0)
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const intentionalCloseRef = useRef(false)
+  const [connectKey, setConnectKey] = useState(0)
+
   const [state, setState] = useState<AudioSocketState>({
     connected: false,
+    reconnecting: false,
     phase: 'idle',
     chunksReceived: 0,
     totalBytes: 0,
@@ -88,6 +99,7 @@ export function useAudioSocket(wsUrl: string | null) {
 
   const commandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: connectKey intentionally triggers reconnection
   useEffect(() => {
     if (!wsUrl) return
 
@@ -104,9 +116,11 @@ export function useAudioSocket(wsUrl: string | null) {
     // Close old connection only if URL changed
     if (wsRef.current && currentUrlRef.current !== wsUrl) {
       console.log('[audio] URL changed, closing old connection')
+      intentionalCloseRef.current = true
       wsRef.current.close()
     }
 
+    intentionalCloseRef.current = false
     currentUrlRef.current = wsUrl
     const ws = new WebSocket(wsUrl)
     ws.binaryType = 'arraybuffer'
@@ -114,7 +128,8 @@ export function useAudioSocket(wsUrl: string | null) {
 
     ws.onopen = () => {
       console.log('[audio] ws connected to', wsUrl)
-      setState((s) => ({ ...s, connected: true }))
+      reconnectAttemptRef.current = 0
+      setState((s) => ({ ...s, connected: true, reconnecting: false }))
     }
 
     ws.onmessage = (event) => {
@@ -282,6 +297,30 @@ export function useAudioSocket(wsUrl: string | null) {
     ws.onclose = (event) => {
       console.log(`[audio] ws closed (code=${event.code})`)
       setState((s) => ({ ...s, connected: false, phase: 'idle' }))
+
+      if (
+        !intentionalCloseRef.current &&
+        reconnectAttemptRef.current < RECONNECT_MAX_ATTEMPTS
+      ) {
+        const attempt = reconnectAttemptRef.current + 1
+        const delay = Math.min(
+          RECONNECT_BASE_DELAY * 2 ** (attempt - 1),
+          RECONNECT_MAX_DELAY,
+        )
+        console.log(
+          `[audio] reconnecting (attempt ${attempt}) in ${delay}ms...`,
+        )
+        setState((s) => ({ ...s, reconnecting: true }))
+        reconnectAttemptRef.current = attempt
+        reconnectTimerRef.current = setTimeout(() => {
+          currentUrlRef.current = null
+          wsRef.current = null
+          setConnectKey((k) => k + 1)
+        }, delay)
+      } else if (reconnectAttemptRef.current >= RECONNECT_MAX_ATTEMPTS) {
+        console.log('[audio] max reconnection attempts reached, giving up')
+        setState((s) => ({ ...s, reconnecting: false }))
+      }
     }
 
     ws.onerror = () => {
@@ -290,14 +329,12 @@ export function useAudioSocket(wsUrl: string | null) {
     }
 
     return () => {
-      // Only close on true unmount (when component is removed from DOM)
-      // Don't close on hot reload or re-render
-      console.log('[audio] cleanup called - checking if should close')
-
-      // We'll only actually close if the URL is changing or component unmounting
-      // React will call this again with the new URL if needed
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
     }
-  }, [wsUrl])
+  }, [wsUrl, connectKey])
 
   // Separate effect to handle true unmount
   useEffect(() => {
@@ -305,9 +342,14 @@ export function useAudioSocket(wsUrl: string | null) {
       // This only runs on true unmount
       if (wsRef.current) {
         console.log('[audio] component unmounting, closing WebSocket')
+        intentionalCloseRef.current = true
         wsRef.current.close()
         wsRef.current = null
         currentUrlRef.current = null
+      }
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
       }
     }
   }, [])
