@@ -4,6 +4,7 @@ import { WebSocketServer, type WebSocket } from 'ws'
 import { chat, clearSession } from '../voice/claude.js'
 import { parseCommand } from '../voice/commands.js'
 import { transcribe } from '../voice/stt.js'
+import { filterForTTS } from '../voice/text-filter.js'
 import { synthesize } from '../voice/tts.js'
 
 function formatBytes(bytes: number): string {
@@ -191,12 +192,15 @@ async function handleControl(
           toolCalls: response.toolCalls,
         })
 
-        // Phase 3: TTS — synthesize Claude's response to audio
-        if (response.text) {
+        // Phase 3: TTS — synthesize Claude's spoken response to audio
+        //   Filter out code blocks, inline code, and raw paths first so
+        //   we only pay for (and hear) the conversational content.
+        const spokenText = response.text ? filterForTTS(response.text) : ''
+        if (spokenText) {
           send(ws, { type: 'synthesizing' })
 
           try {
-            const audioBuffer = await synthesize(response.text)
+            const audioBuffer = await synthesize(spokenText)
             // Send a header so the client knows audio is coming
             send(ws, {
               type: 'tts_audio',
