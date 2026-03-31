@@ -13,7 +13,9 @@ const server = serve({ fetch: app.fetch, port }, () => {
   console.log(`WebSocket available at ws://localhost:${port}/ws/audio`)
 })
 
-const wss = attachWebSocket(server as unknown as Server)
+// serve() returns ServerType (Server | Http2Server | Http2SecureServer);
+// we use the default HTTP server, so narrow to Server for WebSocket attachment.
+const wss = attachWebSocket(server as Server)
 
 function gracefulShutdown(signal: string) {
   console.log(`[server] received ${signal}, shutting down gracefully...`)
