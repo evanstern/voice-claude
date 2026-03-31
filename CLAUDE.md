@@ -2,6 +2,10 @@
 
 ## Project: voice-claude
 
+## Active Worktree: smart-model-routing
+Scope: Route simple queries to Haiku, tool-heavy ones to Sonnet.
+Other parallel branches: concise-prompting, selective-tts, prompt-caching, google-cloud-tts, local-whisper-design, local-tts-design, cost-monitoring
+
 A hands-free voice interface for Claude Code. The goal: talk to Claude through Bluetooth earbuds (Pixel Buds) on an Android phone while your hands are busy — like working at a bakery — and have Claude working on code, managing repos, and talking back.
 
 ## Origin

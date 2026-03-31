@@ -14,6 +14,68 @@ function getClient(): Anthropic {
   return client
 }
 
+// --- Model routing ---
+
+const MODEL_SONNET = 'claude-sonnet-4-5'
+const MODEL_HAIKU = 'claude-haiku-4-5'
+
+type ModelMode = 'auto' | 'sonnet' | 'haiku'
+
+function getModelMode(): ModelMode {
+  const env = process.env.CLAUDE_MODEL?.toLowerCase()
+  if (env === 'sonnet' || env === 'haiku') return env
+  return 'auto' // default
+}
+
+// Keywords that suggest the query needs tool use (and therefore Sonnet)
+const TOOL_KEYWORDS = [
+  'file', 'code', 'git', 'run', 'build', 'deploy',
+  'read', 'write', 'edit', 'commit', 'push', 'pull',
+  'branch', 'merge', 'diff', 'log', 'status',
+  'install', 'test', 'compile', 'lint', 'format',
+  'directory', 'folder', 'path', 'create', 'delete',
+  'remove', 'rename', 'move', 'copy', 'search', 'find',
+  'grep', 'cat', 'ls', 'cd', 'npm', 'pnpm', 'yarn',
+  'docker', 'make', 'script', 'package', 'config',
+  'debug', 'error', 'fix', 'refactor', 'implement',
+  'function', 'class', 'variable', 'import', 'module',
+  'repo', 'repository', 'pr', 'issue', 'release',
+  'server', 'database', 'api', 'endpoint', 'route',
+  'show me', 'look at', 'check the', 'what does',
+  'open', 'source', 'execute', 'command', 'shell', 'terminal',
+]
+
+function looksLikeToolQuery(text: string): boolean {
+  const lower = text.toLowerCase()
+  return TOOL_KEYWORDS.some((kw) => lower.includes(kw))
+}
+
+// Track sessions that have needed tools — once a session uses tools, prefer Sonnet
+const toolSessions = new Set<string>()
+
+function pickModel(sessionId: string, userText: string): string {
+  const mode = getModelMode()
+
+  if (mode === 'sonnet') return MODEL_SONNET
+  if (mode === 'haiku') return MODEL_HAIKU
+
+  // Auto mode: use heuristics
+  // If this session already needed tools, stick with Sonnet
+  if (toolSessions.has(sessionId)) {
+    return MODEL_SONNET
+  }
+
+  // Check keywords
+  if (looksLikeToolQuery(userText)) {
+    return MODEL_SONNET
+  }
+
+  // Default to Haiku for simple queries
+  return MODEL_HAIKU
+}
+
+// --- End model routing ---
+
 const WORK_DIR = process.env.WORK_DIR ?? process.cwd()
 const SYSTEM_PROMPT = `You are a hands-free voice assistant for a software developer. The developer is talking to you through speech-to-text, so their messages may be informal or contain transcription errors — interpret generously.
 
@@ -108,6 +170,7 @@ const sessions = new Map<string, Anthropic.MessageParam[]>()
 export interface ClaudeResponse {
   text: string
   toolCalls: Array<{ name: string; input: string; result: string }>
+  model: string
 }
 
 export async function chat(
@@ -127,6 +190,10 @@ export async function chat(
   let continueCount = 0
   const MAX_CONTINUES = 3
 
+  // Pick the initial model based on heuristics
+  let model = pickModel(sessionId, userText)
+  console.log(`[claude] model routing: ${model} (mode=${getModelMode()}, session=${sessionId})`)
+
   while (continueCount <= MAX_CONTINUES) {
     try {
       let iterations = 0
@@ -135,9 +202,9 @@ export async function chat(
       while (iterations < MAX_ITERATIONS) {
         iterations++
 
-        console.log(`[claude] sending request (iteration ${iterations}, continue ${continueCount})`)
+        console.log(`[claude] sending request to ${model} (iteration ${iterations}, continue ${continueCount})`)
         const response = await anthropic.messages.create({
-          model: 'claude-sonnet-4-5',
+          model,
           max_tokens: 4096,
           system: SYSTEM_PROMPT,
           tools,
@@ -151,11 +218,26 @@ export async function chat(
             (b): b is Anthropic.TextBlock => b.type === 'text',
           )
           const text = textBlock?.text ?? ''
-          console.log(`[claude] response (${iterations} iterations, ${continueCount} continues): "${text.slice(0, 100)}${text.length > 100 ? '...' : ''}"`)
-          return { text, toolCalls }
+          console.log(`[claude] response from ${model} (${iterations} iterations, ${continueCount} continues): "${text.slice(0, 100)}${text.length > 100 ? '...' : ''}"`)
+          return { text, toolCalls, model }
         }
 
         if (response.stop_reason === 'tool_use') {
+          // If we were using Haiku and it wants tools, escalate to Sonnet
+          if (model === MODEL_HAIKU) {
+            console.log(`[claude] Haiku requested tool_use — escalating to Sonnet for this session`)
+            model = MODEL_SONNET
+            toolSessions.add(sessionId)
+
+            // Remove the assistant message we just added (Haiku's tool_use response)
+            // and replay from the user message with Sonnet instead
+            messages.pop()
+            continue
+          }
+
+          // Mark session as tool-using for future requests
+          toolSessions.add(sessionId)
+
           const toolUseBlocks = response.content.filter(
             (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
           )
@@ -189,43 +271,45 @@ export async function chat(
         const textBlock = response.content.find(
           (b): b is Anthropic.TextBlock => b.type === 'text',
         )
-        return { text: textBlock?.text ?? '', toolCalls }
+        return { text: textBlock?.text ?? '', toolCalls, model }
       }
 
-      return { text: 'I hit the maximum number of tool iterations. Could you try a simpler request?', toolCalls }
+      return { text: 'I hit the maximum number of tool iterations. Could you try a simpler request?', toolCalls, model }
 
     } catch (err) {
       const error = err as { message?: string; error?: { type?: string; message?: string } }
       const errorMessage = error.error?.message ?? error.message ?? 'Unknown error'
-      
+
       // Check if this is a max iterations error from the API
-      if (errorMessage.includes('maximum number of tool') || 
+      if (errorMessage.includes('maximum number of tool') ||
           errorMessage.includes('too many tool calls') ||
           error.error?.type === 'invalid_request_error') {
-        
+
         continueCount++
         console.log(`[claude] hit API tool limit, auto-continuing (${continueCount}/${MAX_CONTINUES})`)
-        
+
         if (continueCount > MAX_CONTINUES) {
-          return { 
-            text: `I've made a lot of progress but need to stop here. I completed ${toolCalls.length} operations. Please ask me to continue if you'd like me to finish.`, 
-            toolCalls 
+          return {
+            text: `I've made a lot of progress but need to stop here. I completed ${toolCalls.length} operations. Please ask me to continue if you'd like me to finish.`,
+            toolCalls,
+            model,
           }
         }
-        
+
         // Add a continue message and loop again
         messages.push({ role: 'user', content: 'Please continue with the remaining tasks.' })
         continue
       }
-      
+
       // Some other error - rethrow it
       throw err
     }
   }
 
-  return { text: 'Completed the available operations.', toolCalls }
+  return { text: 'Completed the available operations.', toolCalls, model }
 }
 
 export function clearSession(sessionId: string) {
   sessions.delete(sessionId)
+  toolSessions.delete(sessionId)
 }
