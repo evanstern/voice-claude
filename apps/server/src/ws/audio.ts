@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, Server } from 'node:http'
+import {
+  type ClientWsMessage,
+  type ControlMessage,
+  clientWsMessage,
+} from '@voice-claude/contracts'
 import { type WebSocket, WebSocketServer } from 'ws'
 import {
   appendMessage,
@@ -81,50 +86,60 @@ export function attachWebSocket(httpServer: Server) {
 
     ws.on('message', async (data, isBinary) => {
       if (!isBinary) {
+        let raw: unknown
         try {
-          const msg = JSON.parse(data.toString())
+          raw = JSON.parse(data.toString())
+        } catch {
+          console.warn('[ws] ignoring malformed JSON')
+          return
+        }
 
-          // Handle conversation assignment
-          if (msg.type === 'set_conversation') {
-            conversationId = msg.conversationId ?? null
-            isFirstMessage = msg.isFirstMessage ?? true
-            console.log(
-              `[ws] conversation set to ${conversationId?.slice(0, 8) ?? 'none'}`,
-            )
+        const result = clientWsMessage.safeParse(raw)
+        if (!result.success) {
+          console.warn('[ws] ignoring unrecognized message', raw)
+          return
+        }
 
-            // Restore Claude session from persisted messages
-            clearSession(sessionId)
-            if (conversationId) {
-              const conv = await getConversation(conversationId)
-              if (conv && conv.messages.length > 0) {
-                restoreSession(
-                  sessionId,
-                  conv.messages.map((m) => ({
-                    role: m.role,
-                    content: m.content,
-                  })),
-                )
-              }
+        const msg: ClientWsMessage = result.data
+
+        // Handle conversation assignment
+        if (msg.type === 'set_conversation') {
+          conversationId = msg.conversationId
+          isFirstMessage = msg.isFirstMessage ?? true
+          console.log(
+            `[ws] conversation set to ${conversationId?.slice(0, 8) ?? 'none'}`,
+          )
+
+          // Restore Claude session from persisted messages
+          clearSession(sessionId)
+          if (conversationId) {
+            const conv = await getConversation(conversationId)
+            if (conv && conv.messages.length > 0) {
+              restoreSession(
+                sessionId,
+                conv.messages.map((m) => ({
+                  role: m.role,
+                  content: m.content,
+                })),
+              )
             }
-
-            send(ws, { type: 'conversation_set', conversationId })
-            return
           }
 
-          handleControl(ws, sessionId, msg, () => ({
-            audioChunks,
-            resetAudio: () => {
-              audioChunks = []
-            },
-            conversationId,
-            isFirstMessage,
-            setFirstMessage: (val: boolean) => {
-              isFirstMessage = val
-            },
-          }))
-        } catch {
-          // Ignore malformed text
+          send(ws, { type: 'conversation_set', conversationId })
+          return
         }
+
+        handleControl(ws, sessionId, msg, () => ({
+          audioChunks,
+          resetAudio: () => {
+            audioChunks = []
+          },
+          conversationId,
+          isFirstMessage,
+          setFirstMessage: (val: boolean) => {
+            isFirstMessage = val
+          },
+        }))
         return
       }
 
@@ -205,7 +220,7 @@ export function attachWebSocket(httpServer: Server) {
 async function handleControl(
   ws: WebSocket,
   sessionId: string,
-  msg: Record<string, unknown>,
+  msg: ControlMessage,
   getAudioState: () => {
     audioChunks: Buffer[]
     resetAudio: () => void
