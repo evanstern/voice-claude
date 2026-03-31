@@ -1,3 +1,5 @@
+import { PHASE_HINTS } from '../constants/phase-labels.js'
+
 interface MicButtonProps {
   phase: string
   connected: boolean
@@ -44,27 +46,6 @@ function StopIcon({ className }: { className?: string }) {
       />
     </svg>
   )
-}
-
-const PHASE_HINTS: Record<string, Record<string, string>> = {
-  'push-to-talk': {
-    idle: 'Tap or hold space',
-    recording: 'Release to send',
-    transcribing: 'Transcribing...',
-    thinking: 'Thinking...',
-    synthesizing: 'Generating...',
-    speaking: 'Speaking...',
-    done: 'Tap or hold space',
-  },
-  auto: {
-    idle: 'Listening...',
-    recording: 'Speak now...',
-    transcribing: 'Transcribing...',
-    thinking: 'Thinking...',
-    synthesizing: 'Generating...',
-    speaking: 'Speaking...',
-    done: 'Listening...',
-  },
 }
 
 export function MicButton({
