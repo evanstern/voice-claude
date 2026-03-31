@@ -76,12 +76,12 @@ export function MicButton({
 }: MicButtonProps) {
   const isRecording = phase === 'recording'
   const isAuto = mode === 'auto'
-  const hints = PHASE_HINTS[mode] ?? PHASE_HINTS['push-to-talk']
+  const hints = PHASE_HINTS[mode] ?? PHASE_HINTS['push-to-talk'] ?? {}
 
   return (
     <div className="sticky bottom-0 z-20 flex flex-col items-center gap-2 pb-6 pt-3 bg-gradient-to-t from-background via-background to-transparent">
       <span className="text-xs text-muted-foreground">
-        {!connected ? 'Connecting...' : hints[phase] ?? hints.idle}
+        {!connected ? 'Connecting...' : (hints[phase] ?? hints.idle ?? 'Tap or hold space')}
       </span>
       <div className="flex items-center gap-4">
         <button
