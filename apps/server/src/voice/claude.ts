@@ -31,88 +31,51 @@ function getModelMode(): ModelMode {
   return 'auto' // default
 }
 
-// Phrases/words that strongly indicate the user wants file/shell/git operations.
-// Keep this tight — false positives route cheap queries to the expensive model.
-const TOOL_PHRASES = [
-  // explicit action requests
-  'read the file',
-  'read file',
-  'open the file',
-  'open file',
-  'show me the',
-  'look at the',
-  'check the file',
-  'list the files',
-  'what does the file',
-  "what's in the",
-  'run the',
-  'run this',
-  'execute',
-  'edit the',
-  'write to',
-  'create a file',
-  'delete the file',
-  'search the code',
-  'search for',
-  'find the file',
-  // git
-  'git ',
-  'commit',
-  'push to',
-  'pull from',
-  'merge',
-  'branch',
-  'diff',
-  'git log',
-  'git status',
-  // build/dev
-  'npm ',
-  'pnpm ',
-  'yarn ',
-  'docker ',
-  'build the',
-  'compile',
-  'lint',
-  'deploy',
-  'install the',
-  'install dependencies',
-  // code-specific
+// Only pre-route to Sonnet for tasks that require complex reasoning.
+// Simple tool use (read file, git status, ls) is handled fine by Haiku.
+const COMPLEX_TASK_PHRASES = [
   'refactor',
   'implement',
   'debug the',
   'fix the bug',
-  'what files',
-  'which files',
-  'list files',
-  'list directory',
+  'fix the error',
+  'rewrite',
+  'redesign',
+  'architect',
+  'write a',
+  'write the',
+  'create a new',
+  'build the',
+  'deploy',
+  'migrate',
+  'explain the code',
+  'explain how',
+  'review the code',
+  'code review',
 ]
 
-function looksLikeToolQuery(text: string): boolean {
+function looksLikeComplexTask(text: string): boolean {
   const lower = text.toLowerCase()
-  return TOOL_PHRASES.some((phrase) => lower.includes(phrase))
+  return COMPLEX_TASK_PHRASES.some((phrase) => lower.includes(phrase))
 }
 
-// Track sessions that have needed tools — once a session uses tools, prefer Sonnet
-const toolSessions = new Set<string>()
+// Max tool iterations before Haiku escalates to Sonnet mid-request.
+// Simple queries use 1-2 tool calls; anything beyond this threshold
+// suggests multi-step reasoning that benefits from Sonnet.
+const HAIKU_TOOL_ESCALATION_THRESHOLD = 3
 
-function pickModel(sessionId: string, userText: string): string {
+function pickModel(_sessionId: string, userText: string): string {
   const mode = getModelMode()
 
   if (mode === 'sonnet') return MODEL_SONNET
   if (mode === 'haiku') return MODEL_HAIKU
 
-  // Auto mode: use heuristics
-  // If this session already needed tools, stick with Sonnet
-  if (toolSessions.has(sessionId)) {
+  // Auto mode: only route to Sonnet for complex tasks
+  if (looksLikeComplexTask(userText)) {
     return MODEL_SONNET
   }
 
-  // Check keywords
-  if (looksLikeToolQuery(userText)) {
-    return MODEL_SONNET
-  }
-
-  // Default to Haiku for simple queries
+  // Default to Haiku — it handles simple tool use fine
   return MODEL_HAIKU
 }
 
@@ -292,7 +255,6 @@ setInterval(() => {
       )
       sessions.delete(id)
       sessionLastActive.delete(id)
-      toolSessions.delete(id)
     }
   }
 }, SESSION_EVICTION_INTERVAL_MS).unref()
@@ -432,22 +394,20 @@ export async function chat(
         }
 
         if (response.stop_reason === 'tool_use') {
-          // If we were using Haiku and it wants tools, escalate to Sonnet
-          if (model === MODEL_HAIKU) {
+          // In auto mode, escalate Haiku to Sonnet if tool iterations exceed
+          // the threshold — this indicates a complex multi-step task.
+          if (
+            model === MODEL_HAIKU &&
+            getModelMode() === 'auto' &&
+            iterations >= HAIKU_TOOL_ESCALATION_THRESHOLD
+          ) {
             console.log(
-              '[claude] Haiku requested tool_use — escalating to Sonnet for this session',
+              `[claude] Haiku hit ${iterations} tool iterations — escalating to Sonnet`,
             )
             model = MODEL_SONNET
-            toolSessions.add(sessionId)
-
-            // Remove the assistant message we just added (Haiku's tool_use response)
-            // and replay from the user message with Sonnet instead
-            messages.pop()
-            continue
+            // Don't discard messages — keep the conversation history and
+            // tool results so Sonnet can continue where Haiku left off.
           }
-
-          // Mark session as tool-using for future requests
-          toolSessions.add(sessionId)
 
           const toolUseBlocks = response.content.filter(
             (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
@@ -552,7 +512,6 @@ export async function chat(
 export function clearSession(sessionId: string) {
   sessions.delete(sessionId)
   sessionLastActive.delete(sessionId)
-  toolSessions.delete(sessionId)
 }
 
 export function restoreSession(
@@ -566,9 +525,6 @@ export function restoreSession(
     }
   }
   sessions.set(sessionId, messages)
-  if (history.some((m) => m.role === 'assistant')) {
-    toolSessions.add(sessionId)
-  }
   console.log(
     `[claude] restored session ${sessionId.slice(0, 8)} with ${messages.length} messages`,
   )
