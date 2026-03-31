@@ -1,3 +1,5 @@
+import { Link } from 'react-router'
+
 interface ConnectionHeaderProps {
   apiConnected: boolean
   wsConnected: boolean
@@ -40,17 +42,25 @@ export function ConnectionHeader({
           Voice Claude
         </h1>
       </div>
-      <div className="flex items-center gap-2">
-        <div
-          className={`w-2 h-2 rounded-full transition-colors ${
-            allGood
-              ? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]'
-              : 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.5)]'
-          }`}
-        />
-        <span className="text-xs text-muted-foreground">
-          {allGood ? 'Connected' : !wsConnected ? 'WS offline' : 'API offline'}
-        </span>
+      <div className="flex items-center gap-3">
+        <Link
+          to="/costs"
+          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Costs
+        </Link>
+        <div className="flex items-center gap-2">
+          <div
+            className={`w-2 h-2 rounded-full transition-colors ${
+              allGood
+                ? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]'
+                : 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.5)]'
+            }`}
+          />
+          <span className="text-xs text-muted-foreground">
+            {allGood ? 'Connected' : !wsConnected ? 'WS offline' : 'API offline'}
+          </span>
+        </div>
       </div>
     </header>
   )
