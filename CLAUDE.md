@@ -2,10 +2,6 @@
 
 ## Project: voice-claude
 
-## Active Worktree: selective-tts
-Scope: Filter code blocks and raw output from text before TTS synthesis.
-Other parallel branches: concise-prompting, prompt-caching, google-cloud-tts, smart-model-routing, local-whisper-design, local-tts-design, cost-monitoring
-
 A hands-free voice interface for Claude Code. The goal: talk to Claude through Bluetooth earbuds (Pixel Buds) on an Android phone while your hands are busy — like working at a bakery — and have Claude working on code, managing repos, and talking back.
 
 ## Origin
