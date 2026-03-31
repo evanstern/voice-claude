@@ -54,7 +54,7 @@ export function attachWebSocket(httpServer: Server) {
       `[ws] connected  client=${client} session=${sessionId.slice(0, 8)}`,
     )
 
-    ws.on('message', (data, isBinary) => {
+    ws.on('message', async (data, isBinary) => {
       if (!isBinary) {
         try {
           const msg = JSON.parse(data.toString())
@@ -70,7 +70,7 @@ export function attachWebSocket(httpServer: Server) {
             // Restore Claude session from persisted messages
             clearSession(sessionId)
             if (conversationId) {
-              const conv = getConversation(conversationId)
+              const conv = await getConversation(conversationId)
               if (conv && conv.messages.length > 0) {
                 restoreSession(
                   sessionId,
@@ -240,9 +240,9 @@ async function handleControl(
 
       // Persist user message
       if (conversationId) {
-        appendMessage(conversationId, { role: 'user', content: userText })
+        await appendMessage(conversationId, { role: 'user', content: userText })
         if (isFirstMessage) {
-          autoTitle(conversationId, userText)
+          await autoTitle(conversationId, userText)
           setFirstMessage(false)
         }
       }
@@ -263,7 +263,7 @@ async function handleControl(
 
         // Persist assistant message
         if (conversationId) {
-          appendMessage(conversationId, {
+          await appendMessage(conversationId, {
             role: 'assistant',
             content: response.text ?? '',
             toolCalls: response.toolCalls,
