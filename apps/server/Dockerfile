@@ -29,6 +29,12 @@ FROM node:22-slim AS runner
 
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
+# Install curl for healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 appuser
+
 ENV NODE_ENV=production
 WORKDIR /app
 
@@ -55,6 +61,11 @@ COPY --from=build /app/packages/contracts/ ./packages/contracts/
 COPY --from=build /app/packages/shared/ ./packages/shared/
 
 EXPOSE 4000
+
+USER appuser
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:4000/health || exit 1
 
 # Use tsx since workspace packages export raw TypeScript
 CMD ["node", "--import", "tsx", "apps/server/dist/src/index.js"]
