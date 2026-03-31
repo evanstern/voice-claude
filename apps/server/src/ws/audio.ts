@@ -20,7 +20,7 @@ import {
   recordSTT,
   recordTTS,
 } from '../voice/cost-tracker.js'
-import { transcribe } from '../voice/stt.js'
+import { getSTTProvider, transcribe } from '../voice/stt.js'
 import { filterForTTS } from '../voice/text-filter.js'
 import { getTTSProvider } from '../voice/tts.js'
 
@@ -294,7 +294,8 @@ async function handleControl(
       try {
         const result = await transcribe(combined)
         userText = result.text
-        recordSTT(sessionId, result.durationSec)
+        const sttProvider = getSTTProvider()
+        recordSTT(sessionId, result.durationSec, sttProvider.name, 'whisper-1')
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error'
         console.error(`[ws] stt error  ${message}`)
@@ -362,7 +363,7 @@ async function handleControl(
           },
         )
 
-        recordClaude(sessionId, response.usage)
+        recordClaude(sessionId, response.usage, response.model)
 
         // Persist assistant message
         if (conversationId) {
@@ -400,8 +401,8 @@ async function handleControl(
           send(ws, { type: 'synthesizing' })
 
           try {
-            recordTTS(sessionId, spokenText.length)
             const ttsProvider = await getTTSProvider()
+            recordTTS(sessionId, spokenText.length, ttsProvider.name, 'tts-1')
             const audioBuffer = await ttsProvider.synthesize(spokenText)
 
             if (signal.aborted) {
