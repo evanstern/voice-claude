@@ -1,20 +1,5 @@
+import { type ServerWsMessage, serverWsMessage } from '@voice-claude/contracts'
 import { useCallback, useEffect, useRef, useState } from 'react'
-
-interface AudioSocketMessage {
-  type: string
-  chunk?: number
-  bytes?: number
-  totalBytes?: number
-  timestamp?: number
-  message?: string
-  text?: string
-  error?: string
-  name?: string
-  input?: string
-  format?: string
-  command?: string
-  toolCalls?: Array<{ name: string; input: string; result: string }>
-}
 
 type ProcessingPhase =
   | 'idle'
@@ -176,135 +161,140 @@ export function useAudioSocket(wsUrl: string | null) {
       }
 
       // Text message = JSON control
+      let raw: unknown
       try {
-        const msg: AudioSocketMessage = JSON.parse(event.data)
+        raw = JSON.parse(event.data)
+      } catch {
+        // Ignore non-JSON text messages
+        return
+      }
 
-        switch (msg.type) {
-          case 'audio_ack':
-            console.log(
-              `[audio] ack chunk #${msg.chunk} (${msg.bytes} B, total: ${msg.totalBytes} B)`,
-            )
-            setState((s) => ({
-              ...s,
-              chunksReceived: msg.chunk ?? s.chunksReceived,
-              totalBytes: msg.totalBytes ?? s.totalBytes,
-            }))
-            break
+      const result = serverWsMessage.safeParse(raw)
+      if (!result.success) {
+        console.warn('[audio] ignoring unrecognized server message', raw)
+        return
+      }
 
-          case 'transcribing':
-            console.log(`[audio] transcribing ${msg.bytes} B...`)
-            setState((s) => ({ ...s, phase: 'transcribing' }))
-            break
+      const msg: ServerWsMessage = result.data
 
-          case 'transcription':
-            if (msg.error) {
-              console.error(`[audio] transcription error: ${msg.error}`)
-            } else {
-              console.log(`[audio] transcription: "${msg.text}"`)
-            }
-            setState((s) => ({
-              ...s,
-              transcription: msg.text ?? null,
-              transcriptionError: msg.error ?? null,
-              phase: msg.text ? s.phase : 'done',
-            }))
-            break
+      switch (msg.type) {
+        case 'audio_ack':
+          console.log(
+            `[audio] ack chunk #${msg.chunk} (${msg.bytes} B, total: ${msg.totalBytes} B)`,
+          )
+          setState((s) => ({
+            ...s,
+            chunksReceived: msg.chunk,
+            totalBytes: msg.totalBytes,
+          }))
+          break
 
-          case 'thinking':
-            console.log('[audio] claude is thinking...')
-            setState((s) => ({ ...s, phase: 'thinking' }))
-            break
+        case 'transcribing':
+          console.log(`[audio] transcribing ${msg.bytes} B...`)
+          setState((s) => ({ ...s, phase: 'transcribing' }))
+          break
 
-          case 'tool_use':
-            console.log(`[audio] claude using tool: ${msg.name}`)
-            setState((s) => ({
-              ...s,
-              activeTools: [...s.activeTools, msg.name ?? ''],
-            }))
-            break
+        case 'transcription':
+          if (msg.error) {
+            console.error(`[audio] transcription error: ${msg.error}`)
+          } else {
+            console.log(`[audio] transcription: "${msg.text}"`)
+          }
+          setState((s) => ({
+            ...s,
+            transcription: msg.text ?? null,
+            transcriptionError: msg.error ?? null,
+            phase: msg.text ? s.phase : 'done',
+          }))
+          break
 
-          case 'claude_response':
-            if (msg.error) {
-              console.error(`[audio] claude error: ${msg.error}`)
-              setState((s) => ({
-                ...s,
-                phase: 'done',
-                claudeResponse: null,
-                claudeError: msg.error ?? null,
-                toolCalls: msg.toolCalls ?? [],
-                activeTools: [],
-              }))
-            } else {
-              console.log(
-                `[audio] claude: "${(msg.text ?? '').slice(0, 100)}..."`,
-              )
-              // Don't set phase to 'done' yet — TTS may follow
-              setState((s) => ({
-                ...s,
-                claudeResponse: msg.text ?? null,
-                claudeError: null,
-                toolCalls: msg.toolCalls ?? [],
-                activeTools: [],
-              }))
-            }
-            break
+        case 'thinking':
+          console.log('[audio] claude is thinking...')
+          setState((s) => ({ ...s, phase: 'thinking' }))
+          break
 
-          case 'synthesizing':
-            console.log('[audio] synthesizing TTS...')
-            setState((s) => ({ ...s, phase: 'synthesizing' }))
-            break
+        case 'tool_use':
+          console.log(`[audio] claude using tool: ${msg.name}`)
+          setState((s) => ({
+            ...s,
+            activeTools: [...s.activeTools, msg.name],
+          }))
+          break
 
-          case 'tts_audio':
-            console.log(
-              `[audio] TTS audio header: ${msg.format}, ${msg.bytes} B`,
-            )
-            expectingAudioRef.current = true
-            audioFormatRef.current = msg.format ?? 'mp3'
-            break
-
-          case 'tts_error':
-            console.error(`[audio] TTS error: ${msg.error}`)
-            setState((s) => ({ ...s, phase: 'done' }))
-            break
-
-          case 'command': {
-            const label =
-              msg.command === 'disregard'
-                ? 'Message discarded'
-                : msg.command === 'clear'
-                  ? 'Conversation cleared'
-                  : `Command: ${msg.command}`
-            console.log(`[audio] voice command: ${msg.command}`)
+        case 'claude_response':
+          if (msg.error) {
+            console.error(`[audio] claude error: ${msg.error}`)
             setState((s) => ({
               ...s,
               phase: 'done',
-              commandNotice: label,
-              // Clear conversation state on reset
-              ...(msg.command === 'clear'
-                ? {
-                    transcription: null,
-                    claudeResponse: null,
-                    claudeError: null,
-                    toolCalls: [],
-                  }
-                : {}),
+              claudeResponse: null,
+              claudeError: msg.error ?? null,
+              toolCalls: msg.toolCalls ?? [],
+              activeTools: [],
             }))
-            // Auto-dismiss the notice after 3 seconds
-            if (commandTimerRef.current) {
-              clearTimeout(commandTimerRef.current)
-            }
-            commandTimerRef.current = setTimeout(() => {
-              setState((s) => ({ ...s, commandNotice: null }))
-              commandTimerRef.current = null
-            }, 3000)
-            break
+          } else {
+            console.log(
+              `[audio] claude: "${(msg.text ?? '').slice(0, 100)}..."`,
+            )
+            // Don't set phase to 'done' yet — TTS may follow
+            setState((s) => ({
+              ...s,
+              claudeResponse: msg.text ?? null,
+              claudeError: null,
+              toolCalls: msg.toolCalls ?? [],
+              activeTools: [],
+            }))
           }
+          break
 
-          default:
-            console.log(`[audio] ${msg.type}`, msg)
+        case 'synthesizing':
+          console.log('[audio] synthesizing TTS...')
+          setState((s) => ({ ...s, phase: 'synthesizing' }))
+          break
+
+        case 'tts_audio':
+          console.log(`[audio] TTS audio header: ${msg.format}, ${msg.bytes} B`)
+          expectingAudioRef.current = true
+          audioFormatRef.current = msg.format
+          break
+
+        case 'tts_error':
+          console.error(`[audio] TTS error: ${msg.error}`)
+          setState((s) => ({ ...s, phase: 'done' }))
+          break
+
+        case 'command': {
+          const label =
+            msg.command === 'disregard'
+              ? 'Message discarded'
+              : msg.command === 'clear'
+                ? 'Conversation cleared'
+                : `Command: ${msg.command}`
+          console.log(`[audio] voice command: ${msg.command}`)
+          setState((s) => ({
+            ...s,
+            phase: 'done',
+            commandNotice: label,
+            // Clear conversation state on reset
+            ...(msg.command === 'clear'
+              ? {
+                  transcription: null,
+                  claudeResponse: null,
+                  claudeError: null,
+                  toolCalls: [],
+                }
+              : {}),
+          }))
+          // Auto-dismiss the notice after 3 seconds
+          if (commandTimerRef.current) {
+            clearTimeout(commandTimerRef.current)
+          }
+          commandTimerRef.current = setTimeout(() => {
+            setState((s) => ({ ...s, commandNotice: null }))
+            commandTimerRef.current = null
+          }, 3000)
+          break
         }
-      } catch {
-        // Ignore non-JSON text messages
       }
     }
 

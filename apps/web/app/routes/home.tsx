@@ -1,6 +1,6 @@
 import type { ConversationSummary } from '@voice-claude/contracts'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useOutletContext } from 'react-router'
+import { useNavigate, useOutletContext, useParams } from 'react-router'
 import { ChatMessage } from '../components/chat-message.js'
 import { ConnectionHeader } from '../components/connection-header.js'
 import { ConversationList } from '../components/conversation-list.js'
@@ -110,9 +110,9 @@ export default function Home() {
   // Conversation management
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
-  const [activeConversationId, setActiveConversationId] = useState<
-    string | null
-  >(null)
+  const params = useParams<{ conversationId?: string }>()
+  const activeConversationId = params.conversationId ?? null
+  const navigate = useNavigate()
   const isFirstMessageRef = useRef(true)
 
   // Fetch conversation list
@@ -131,68 +131,90 @@ export default function Home() {
     refreshConversations()
   }, [refreshConversations])
 
-  // Create a new conversation and tell the server about it
+  // Create a new conversation and navigate to it
   const createNewConversation = useCallback(async () => {
     if (!trpc) return
     try {
       const conv = await trpc.conversations.create.mutate()
-      setActiveConversationId(conv.id)
-      isFirstMessageRef.current = true
-      setConversation([])
-      setPendingEntry(null)
-      nextIdRef.current = 1
-      audio.sendConversation(conv.id, true)
       refreshConversations()
-      setDrawerOpen(false)
+      navigate(`/c/${conv.id}`)
     } catch (err) {
       console.error('[home] failed to create conversation:', err)
     }
-  }, [trpc, audio, refreshConversations])
+  }, [trpc, refreshConversations, navigate])
 
-  // Select existing conversation and load its messages
-  const selectConversation = useCallback(
-    async (id: string) => {
-      if (!trpc) return
-      try {
-        const data = await trpc.conversations.get.query({ id })
-        if (!data) return
-        setActiveConversationId(id)
-        isFirstMessageRef.current = data.messages.length === 0
+  // Load conversation data when activeConversationId changes (URL-driven)
+  useEffect(() => {
+    let cancelled = false
 
-        // Convert persisted messages to ConversationEntry pairs
-        const entries: ConversationEntry[] = []
-        let entryId = 1
-        const msgs = data.messages
-        for (let i = 0; i < msgs.length; i++) {
-          const msg = msgs[i]
-          if (!msg) continue
-          if (msg.role === 'user') {
-            const next = msgs[i + 1]
-            const entry: ConversationEntry = {
-              id: entryId++,
-              userText: msg.content,
-              userError: msg.error ?? null,
+    if (activeConversationId && trpc) {
+      const loadConversation = async () => {
+        try {
+          const data = await trpc.conversations.get.query({
+            id: activeConversationId,
+          })
+          if (cancelled) return
+          if (!data) {
+            navigate('/', { replace: true })
+            return
+          }
+          isFirstMessageRef.current = data.messages.length === 0
+
+          // Convert persisted messages to ConversationEntry pairs
+          const entries: ConversationEntry[] = []
+          let entryId = 1
+          const msgs = data.messages
+          for (let i = 0; i < msgs.length; i++) {
+            const msg = msgs[i]
+            if (!msg) continue
+            if (msg.role === 'user') {
+              const next = msgs[i + 1]
+              const entry: ConversationEntry = {
+                id: entryId++,
+                userText: msg.content,
+                userError: msg.error ?? null,
+              }
+              if (next?.role === 'assistant') {
+                entry.assistantText = next.content
+                entry.assistantError = next.error ?? null
+                entry.toolCalls = next.toolCalls
+                i++ // skip assistant message
+              }
+              entries.push(entry)
             }
-            if (next?.role === 'assistant') {
-              entry.assistantText = next.content
-              entry.assistantError = next.error ?? null
-              entry.toolCalls = next.toolCalls
-              i++ // skip assistant message
-            }
-            entries.push(entry)
+          }
+          setConversation(entries)
+          setPendingEntry(null)
+          nextIdRef.current = entryId
+          audio.sendConversation(
+            activeConversationId,
+            isFirstMessageRef.current,
+          )
+        } catch (err) {
+          console.error('[home] failed to load conversation:', err)
+          if (!cancelled) {
+            navigate('/', { replace: true })
           }
         }
-        setConversation(entries)
-        setPendingEntry(null)
-        nextIdRef.current = entryId
-        audio.sendConversation(id, isFirstMessageRef.current)
-        setDrawerOpen(false)
-      } catch (err) {
-        console.error('[home] failed to load conversation:', err)
       }
-    },
-    [trpc, audio],
-  )
+      loadConversation()
+    } else {
+      // No active conversation — clear state
+      setConversation([])
+      setPendingEntry(null)
+      nextIdRef.current = 1
+      isFirstMessageRef.current = true
+      audio.sendConversation(null, true)
+    }
+
+    // Close drawer when navigating
+    setDrawerOpen(false)
+
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- audio.sendConversation is a stable useCallback
+  }, [activeConversationId, trpc, navigate])
 
   // Delete conversation
   const deleteConversation = useCallback(
@@ -201,18 +223,14 @@ export default function Home() {
       try {
         await trpc.conversations.delete.mutate({ id })
         if (activeConversationId === id) {
-          setActiveConversationId(null)
-          setConversation([])
-          setPendingEntry(null)
-          nextIdRef.current = 1
-          audio.sendConversation(null, true)
+          navigate('/')
         }
         refreshConversations()
       } catch (err) {
         console.error('[home] failed to delete conversation:', err)
       }
     },
-    [trpc, activeConversationId, audio, refreshConversations],
+    [trpc, activeConversationId, navigate, refreshConversations],
   )
 
   // Auto-create conversation on first recording if none active
@@ -220,16 +238,16 @@ export default function Home() {
     if (!activeConversationId && trpc) {
       try {
         const conv = await trpc.conversations.create.mutate()
-        setActiveConversationId(conv.id)
         isFirstMessageRef.current = true
         audio.sendConversation(conv.id, true)
         refreshConversations()
+        navigate(`/c/${conv.id}`, { replace: true })
       } catch (err) {
         console.error('[home] failed to auto-create conversation:', err)
       }
     }
     audio.startRecording()
-  }, [activeConversationId, trpc, audio, refreshConversations])
+  }, [activeConversationId, trpc, audio, refreshConversations, navigate])
 
   // When transcription arrives, start a new pending entry
   const prevTranscriptionRef = useRef<string | null>(null)
@@ -404,7 +422,6 @@ export default function Home() {
         open={drawerOpen}
         conversations={conversations}
         activeId={activeConversationId}
-        onSelect={selectConversation}
         onNew={createNewConversation}
         onDelete={deleteConversation}
         onClose={() => setDrawerOpen(false)}
