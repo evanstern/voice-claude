@@ -9,6 +9,10 @@ const PROVIDERS: Record<string, () => Promise<TTSProvider>> = {
     const { GoogleTTSProvider } = await import('./google-tts.js')
     return new GoogleTTSProvider()
   },
+  piper: async () => {
+    const { PiperTTSProvider } = await import('./piper-tts.js')
+    return new PiperTTSProvider()
+  },
 }
 
 let cachedProvider: TTSProvider | null = null
