@@ -1,5 +1,8 @@
 import type { ConversationSummary } from '@voice-claude/contracts'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createLogger } from '~/lib/logger'
+
+const log = createLogger('home')
 import { useNavigate, useOutletContext, useParams } from 'react-router'
 import { ChatMessage } from '../components/chat-message.js'
 import { ConnectionHeader } from '../components/connection-header.js'
@@ -92,7 +95,7 @@ export default function Home() {
     if (mode !== 'auto') return
     vad.setOnSpeechEnd(() => {
       if (audio.phase === 'recording') {
-        console.log('[auto] VAD detected speech end, sending...')
+        log.debug('VAD detected speech end, sending')
         audio.stopRecording()
       }
     })
@@ -122,7 +125,7 @@ export default function Home() {
       const list = await trpc.conversations.list.query()
       setConversations(list)
     } catch (err) {
-      console.error('[home] failed to fetch conversations:', err)
+      log.error('failed to fetch conversations:', err)
     }
   }, [trpc])
 
@@ -139,7 +142,7 @@ export default function Home() {
       refreshConversations()
       navigate(`/c/${conv.id}`)
     } catch (err) {
-      console.error('[home] failed to create conversation:', err)
+      log.error('failed to create conversation:', err)
     }
   }, [trpc, refreshConversations, navigate])
 
@@ -191,7 +194,7 @@ export default function Home() {
             isFirstMessageRef.current,
           )
         } catch (err) {
-          console.error('[home] failed to load conversation:', err)
+          log.error('failed to load conversation:', err)
           if (!cancelled) {
             navigate('/', { replace: true })
           }
@@ -226,7 +229,7 @@ export default function Home() {
         }
         refreshConversations()
       } catch (err) {
-        console.error('[home] failed to delete conversation:', err)
+        log.error('failed to delete conversation:', err)
       }
     },
     [trpc, activeConversationId, navigate, refreshConversations],
@@ -242,7 +245,7 @@ export default function Home() {
         refreshConversations()
         navigate(`/c/${conv.id}`, { replace: true })
       } catch (err) {
-        console.error('[home] failed to auto-create conversation:', err)
+        log.error('failed to auto-create conversation:', err)
       }
     }
     audio.startRecording()
