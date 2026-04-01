@@ -60,7 +60,8 @@ function inferLanguage(toolCall: ToolCall): string {
 }
 
 function ToolCallItem({ toolCall }: { toolCall: ToolCall }) {
-  const [expanded, setExpanded] = useState(false)
+  const isFileRead = toolCall.name === 'read_file'
+  const [expanded, setExpanded] = useState(isFileRead)
 
   let detail = '...'
   try {
@@ -100,8 +101,8 @@ function ToolCallItem({ toolCall }: { toolCall: ToolCall }) {
         )}
       </button>
       {expanded && hasResult && (
-        <div className="mt-1.5 rounded-lg overflow-hidden border border-border">
-          <div className="max-h-[400px] overflow-auto">
+        <div className="mt-1.5 rounded-lg overflow-hidden border border-border/60">
+          <div className={isFileRead ? '' : 'max-h-[400px] overflow-auto'}>
             <SyntaxHighlighter
               language={language}
               style={oneDark}
