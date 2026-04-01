@@ -1,6 +1,9 @@
 import { toFile } from 'openai'
+import { logger } from '../logger.js'
 import { getOpenAIClient } from './openai.js'
 import type { STTProvider, STTResult } from './stt-provider.js'
+
+const log = logger.child({ module: 'stt' })
 
 export class OpenAISTTProvider implements STTProvider {
   readonly name = 'openai'
@@ -14,9 +17,7 @@ export class OpenAISTTProvider implements STTProvider {
     const ext = mimeType.includes('webm') ? 'webm' : 'wav'
     const file = await toFile(audioBuffer, `audio.${ext}`, { type: mimeType })
 
-    console.log(
-      `[stt:openai] transcribing ${(audioBuffer.byteLength / 1024).toFixed(1)} KB of ${mimeType}`,
-    )
+    log.debug({ sizeKB: (audioBuffer.byteLength / 1024).toFixed(1), mimeType }, 'transcribing')
     const start = Date.now()
 
     const response = await openai.audio.transcriptions.create({
@@ -30,9 +31,7 @@ export class OpenAISTTProvider implements STTProvider {
     const text = (resp.text ?? '').trim()
     const durationSec = resp.duration ?? 0
 
-    console.log(
-      `[stt:openai] result (${elapsed}ms, ${durationSec.toFixed(1)}s audio): "${text}"`,
-    )
+    log.info({ elapsedMs: elapsed, durationSec, text }, 'transcription result')
     return { text, durationSec }
   }
 }
