@@ -6,6 +6,7 @@ import {
   listConversations,
   updateConversationTitle,
 } from '../storage/conversations.js'
+import { queryCosts } from '../storage/costs.js'
 import { getStats } from '../voice/cost-tracker.js'
 import { createRouter, publicProcedure } from './init.js'
 
@@ -24,6 +25,11 @@ export const appRouter = createRouter({
   stats: publicProcedure.query(() => {
     return getStats()
   }),
+  costHistory: publicProcedure
+    .input(z.object({ from: z.string(), to: z.string() }))
+    .query(({ input }) => {
+      return queryCosts(input.from, input.to)
+    }),
   conversations: createRouter({
     list: publicProcedure.query(() => {
       return listConversations()
