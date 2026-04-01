@@ -35,7 +35,10 @@ export class LocalSTTProvider implements STTProvider {
     const wavPath = join(tempDir, 'input.wav')
 
     try {
-      log.debug({ sizeKB: (audioBuffer.byteLength / 1024).toFixed(1), mimeType }, 'transcribing')
+      log.debug(
+        { sizeKB: (audioBuffer.byteLength / 1024).toFixed(1), mimeType },
+        'transcribing',
+      )
       const start = Date.now()
 
       // Write the incoming audio to a temp file
@@ -71,7 +74,10 @@ export class LocalSTTProvider implements STTProvider {
       // Parse the whisper-cpp output
       const { text, durationSec } = this.parseOutput(stdout)
 
-      log.info({ elapsedMs: elapsed, durationSec, text }, 'transcription result')
+      log.info(
+        { elapsedMs: elapsed, durationSec, text },
+        'transcription result',
+      )
       return { text, durationSec }
     } finally {
       // Clean up temp files

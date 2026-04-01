@@ -43,7 +43,14 @@ export class PiperTTSProvider implements TTSProvider {
     const wav = Buffer.from(arrayBuffer)
 
     const elapsed = Date.now() - start
-    log.info({ elapsedMs: elapsed, sizeKB: (wav.byteLength / 1024).toFixed(1), format: 'wav' }, 'synthesis done')
+    log.info(
+      {
+        elapsedMs: elapsed,
+        sizeKB: (wav.byteLength / 1024).toFixed(1),
+        format: 'wav',
+      },
+      'synthesis done',
+    )
 
     return wav
   }

@@ -180,7 +180,9 @@ export function useAudioSocket(wsUrl: string | null) {
 
       switch (msg.type) {
         case 'audio_ack':
-          log.debug(`ack chunk #${msg.chunk} (${msg.bytes} B, total: ${msg.totalBytes} B)`)
+          log.debug(
+            `ack chunk #${msg.chunk} (${msg.bytes} B, total: ${msg.totalBytes} B)`,
+          )
           setState((s) => ({
             ...s,
             chunksReceived: msg.chunk,
@@ -401,7 +403,9 @@ export function useAudioSocket(wsUrl: string | null) {
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0) {
         chunksRef.current.push(event.data)
-        log.debug(`buffered chunk #${chunksRef.current.length} (${event.data.size} B)`)
+        log.debug(
+          `buffered chunk #${chunksRef.current.length} (${event.data.size} B)`,
+        )
       }
     }
 
@@ -446,7 +450,9 @@ export function useAudioSocket(wsUrl: string | null) {
       if (chunks.length > 0) {
         const mimeType = chunks[0]?.type || 'audio/webm'
         const blob = new Blob(chunks, { type: mimeType })
-        log.debug(`sending complete recording: ${(blob.size / 1024).toFixed(1)} KB (${chunks.length} chunks)`)
+        log.debug(
+          `sending complete recording: ${(blob.size / 1024).toFixed(1)} KB (${chunks.length} chunks)`,
+        )
         ws.send(blob)
       }
       chunksRef.current = []

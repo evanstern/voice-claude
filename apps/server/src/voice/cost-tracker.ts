@@ -280,14 +280,21 @@ export function finalizeInteraction(sessionId: string): void {
   const pending = pendingCosts.get(sessionId) ?? { stt: 0, claude: 0, tts: 0 }
   const total = pending.stt + pending.claude + pending.tts
 
-  log.info({
-    interaction: globalStats.totalInteractions,
-    stt: pending.stt.toFixed(4),
-    claude: pending.claude.toFixed(4),
-    tts: pending.tts.toFixed(4),
-    total: total.toFixed(4),
-    cumulative: (globalStats.totalCosts.stt + globalStats.totalCosts.claude + globalStats.totalCosts.tts).toFixed(4),
-  }, 'interaction cost')
+  log.info(
+    {
+      interaction: globalStats.totalInteractions,
+      stt: pending.stt.toFixed(4),
+      claude: pending.claude.toFixed(4),
+      tts: pending.tts.toFixed(4),
+      total: total.toFixed(4),
+      cumulative: (
+        globalStats.totalCosts.stt +
+        globalStats.totalCosts.claude +
+        globalStats.totalCosts.tts
+      ).toFixed(4),
+    },
+    'interaction cost',
+  )
 
   // Persist to disk for historical queries
   const usage = pendingUsage.get(sessionId) ?? {

@@ -32,7 +32,14 @@ export class OpenAITTSProvider implements TTSProvider {
     const buffer = Buffer.from(arrayBuffer)
 
     const elapsed = Date.now() - start
-    log.info({ elapsedMs: elapsed, sizeKB: (buffer.byteLength / 1024).toFixed(1), format: 'mp3' }, 'synthesis done')
+    log.info(
+      {
+        elapsedMs: elapsed,
+        sizeKB: (buffer.byteLength / 1024).toFixed(1),
+        format: 'mp3',
+      },
+      'synthesis done',
+    )
 
     return buffer
   }

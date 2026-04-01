@@ -108,7 +108,10 @@ export function attachWebSocket(httpServer: Server) {
         if (msg.type === 'set_conversation') {
           conversationId = msg.conversationId
           isFirstMessage = msg.isFirstMessage ?? true
-          log.info({ conversationId: conversationId?.slice(0, 8) ?? 'none' }, 'conversation set')
+          log.info(
+            { conversationId: conversationId?.slice(0, 8) ?? 'none' },
+            'conversation set',
+          )
 
           // Restore Claude session from persisted messages
           clearSession(sessionId)
@@ -174,7 +177,10 @@ export function attachWebSocket(httpServer: Server) {
 
       // Enforce max buffer size to prevent memory exhaustion
       if (totalBytes > MAX_AUDIO_BUFFER_BYTES) {
-        log.warn({ maxBytes: MAX_AUDIO_BUFFER_BYTES }, 'audio buffer exceeded limit, clearing')
+        log.warn(
+          { maxBytes: MAX_AUDIO_BUFFER_BYTES },
+          'audio buffer exceeded limit, clearing',
+        )
         audioChunks = []
         totalBytes = 0
         chunkCount = 0
@@ -185,7 +191,10 @@ export function attachWebSocket(httpServer: Server) {
         return
       }
 
-      log.debug({ chunk: chunkCount, size: bytes, total: totalBytes }, 'audio chunk received')
+      log.debug(
+        { chunk: chunkCount, size: bytes, total: totalBytes },
+        'audio chunk received',
+      )
 
       send(ws, {
         type: 'audio_ack',
@@ -203,7 +212,17 @@ export function attachWebSocket(httpServer: Server) {
           ? formatBytes(Math.round(totalBytes / chunkCount))
           : 'n/a'
 
-      log.info({ code, duration, streamDuration, chunks: chunkCount, totalBytes, avgChunkSize }, 'connection closed')
+      log.info(
+        {
+          code,
+          duration,
+          streamDuration,
+          chunks: chunkCount,
+          totalBytes,
+          avgChunkSize,
+        },
+        'connection closed',
+      )
 
       // Clean up server-side state for this session
       audioChunks = []
@@ -312,7 +331,10 @@ async function handleControl(
       }
 
       if (command === 'clear') {
-        log.info({ session: sessionId.slice(0, 8) }, 'voice command: clear, resetting session')
+        log.info(
+          { session: sessionId.slice(0, 8) },
+          'voice command: clear, resetting session',
+        )
         clearSession(sessionId)
         send(ws, { type: 'transcription', text: userText })
         send(ws, { type: 'command', command: 'clear' })

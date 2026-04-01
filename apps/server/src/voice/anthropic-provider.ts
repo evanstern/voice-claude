@@ -255,7 +255,13 @@ export class AnthropicProvider implements AIProvider {
       const now = Date.now()
       for (const [id, lastActive] of this.sessionLastActive) {
         if (now - lastActive > SESSION_TTL_MS) {
-          log.debug({ session: id.slice(0, 8), inactiveMin: Math.round((now - lastActive) / 1000 / 60) }, 'evicting stale session')
+          log.debug(
+            {
+              session: id.slice(0, 8),
+              inactiveMin: Math.round((now - lastActive) / 1000 / 60),
+            },
+            'evicting stale session',
+          )
           this.sessions.delete(id)
           this.sessionLastActive.delete(id)
         }
@@ -301,7 +307,10 @@ export class AnthropicProvider implements AIProvider {
     const MAX_CONTINUES = 3
 
     let model = pickModel(sessionId, userText)
-    log.info({ model, mode: getModelMode(), session: sessionId }, 'model routing')
+    log.info(
+      { model, mode: getModelMode(), session: sessionId },
+      'model routing',
+    )
 
     const MAX_RETRIES = 3
     const createWithRetry = async (
@@ -314,7 +323,10 @@ export class AnthropicProvider implements AIProvider {
           const status = (err as { status?: number }).status
           if ((status === 429 || status === 529) && attempt < MAX_RETRIES) {
             const delay = 1000 * 2 ** (attempt - 1)
-            log.warn({ status, attempt, maxRetries: MAX_RETRIES, delayMs: delay }, 'rate limit error, retrying')
+            log.warn(
+              { status, attempt, maxRetries: MAX_RETRIES, delayMs: delay },
+              'rate limit error, retrying',
+            )
             await new Promise((r) => setTimeout(r, delay))
             continue
           }
@@ -331,7 +343,10 @@ export class AnthropicProvider implements AIProvider {
         while (iterations < MAX_ITERATIONS) {
           iterations++
 
-          log.debug({ model, iteration: iterations, continueCount }, 'sending API request')
+          log.debug(
+            { model, iteration: iterations, continueCount },
+            'sending API request',
+          )
           const response = await createWithRetry({
             model,
             max_tokens: 4096,
@@ -349,7 +364,14 @@ export class AnthropicProvider implements AIProvider {
           const cacheRead = response.usage.cache_read_input_tokens ?? 0
           const cacheCreation = response.usage.cache_creation_input_tokens ?? 0
           if (cacheRead > 0 || cacheCreation > 0) {
-            log.debug({ cacheRead, cacheCreation, inputTokens: response.usage.input_tokens }, 'cache stats')
+            log.debug(
+              {
+                cacheRead,
+                cacheCreation,
+                inputTokens: response.usage.input_tokens,
+              },
+              'cache stats',
+            )
           }
 
           messages.push({ role: 'assistant', content: response.content })
@@ -366,7 +388,10 @@ export class AnthropicProvider implements AIProvider {
               (b): b is Anthropic.TextBlock => b.type === 'text',
             )
             const text = textBlock?.text ?? ''
-            log.info({ iterations, continueCount, textLength: text.length }, 'response complete')
+            log.info(
+              { iterations, continueCount, textLength: text.length },
+              'response complete',
+            )
             return { text, toolCalls, usage: accumulatedUsage, model }
           }
 
@@ -376,7 +401,10 @@ export class AnthropicProvider implements AIProvider {
               getModelMode() === 'auto' &&
               iterations >= HAIKU_TOOL_ESCALATION_THRESHOLD
             ) {
-              log.info({ iterations }, 'Haiku hit tool iteration threshold, escalating to Sonnet')
+              log.info(
+                { iterations },
+                'Haiku hit tool iteration threshold, escalating to Sonnet',
+              )
               model = MODEL_SONNET
             }
 
@@ -444,7 +472,10 @@ export class AnthropicProvider implements AIProvider {
           error.error?.type === 'invalid_request_error'
         ) {
           continueCount++
-          log.warn({ continueCount, maxContinues: MAX_CONTINUES }, 'hit API tool limit, auto-continuing')
+          log.warn(
+            { continueCount, maxContinues: MAX_CONTINUES },
+            'hit API tool limit, auto-continuing',
+          )
 
           if (continueCount > MAX_CONTINUES) {
             return {
@@ -490,6 +521,9 @@ export class AnthropicProvider implements AIProvider {
       }
     }
     this.sessions.set(sessionId, messages)
-    log.info({ session: sessionId.slice(0, 8), messageCount: messages.length }, 'session restored')
+    log.info(
+      { session: sessionId.slice(0, 8), messageCount: messages.length },
+      'session restored',
+    )
   }
 }

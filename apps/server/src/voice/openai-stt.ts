@@ -17,7 +17,10 @@ export class OpenAISTTProvider implements STTProvider {
     const ext = mimeType.includes('webm') ? 'webm' : 'wav'
     const file = await toFile(audioBuffer, `audio.${ext}`, { type: mimeType })
 
-    log.debug({ sizeKB: (audioBuffer.byteLength / 1024).toFixed(1), mimeType }, 'transcribing')
+    log.debug(
+      { sizeKB: (audioBuffer.byteLength / 1024).toFixed(1), mimeType },
+      'transcribing',
+    )
     const start = Date.now()
 
     const response = await openai.audio.transcriptions.create({

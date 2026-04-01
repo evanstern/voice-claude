@@ -49,7 +49,14 @@ export class GoogleTTSProvider implements TTSProvider {
     const buffer = Buffer.from(response.audioContent as Uint8Array)
 
     const elapsed = Date.now() - start
-    log.info({ elapsedMs: elapsed, sizeKB: (buffer.byteLength / 1024).toFixed(1), format }, 'synthesis done')
+    log.info(
+      {
+        elapsedMs: elapsed,
+        sizeKB: (buffer.byteLength / 1024).toFixed(1),
+        format,
+      },
+      'synthesis done',
+    )
 
     return buffer
   }
