@@ -277,33 +277,44 @@ export default function Home() {
     }
   }, [audio.transcription, audio.transcriptionError])
 
-  // When Claude responds and phase goes to done, finalize the entry
+  // When Claude responds, finalize the entry immediately so text appears in chat
+  // while TTS audio continues playing in the background.
+  const prevClaudeResponseRef = useRef<string | null>(null)
   useEffect(() => {
-    if (audio.phase === 'done' && phaseRef.current !== 'done') {
-      if (pendingEntry) {
-        const finalized: ConversationEntry = {
-          ...pendingEntry,
-          assistantText: audio.claudeResponse,
-          assistantError: audio.claudeError,
-          toolCalls:
-            audio.toolCalls.length > 0 ? [...audio.toolCalls] : undefined,
-        }
-        setConversation((prev) => [...prev, finalized])
-        setPendingEntry(null)
-        isFirstMessageRef.current = false
-        // Refresh list to pick up auto-title and updated timestamps
-        refreshConversations()
+    const hasNewResponse =
+      audio.claudeResponse !== null &&
+      audio.claudeResponse !== prevClaudeResponseRef.current
+
+    const hasNewError =
+      audio.claudeError !== null &&
+      audio.claudeError !== prevClaudeResponseRef.current
+
+    if ((hasNewResponse || hasNewError) && pendingEntry) {
+      prevClaudeResponseRef.current = audio.claudeResponse ?? audio.claudeError
+      const finalized: ConversationEntry = {
+        ...pendingEntry,
+        assistantText: audio.claudeResponse,
+        assistantError: audio.claudeError,
+        toolCalls:
+          audio.toolCalls.length > 0 ? [...audio.toolCalls] : undefined,
       }
+      setConversation((prev) => [...prev, finalized])
+      setPendingEntry(null)
+      isFirstMessageRef.current = false
+      refreshConversations()
     }
-    phaseRef.current = audio.phase
   }, [
-    audio.phase,
     audio.claudeResponse,
     audio.claudeError,
     audio.toolCalls,
     pendingEntry,
     refreshConversations,
   ])
+
+  // Keep phaseRef in sync (used by sound effects and other phase-dependent logic)
+  useEffect(() => {
+    phaseRef.current = audio.phase
+  }, [audio.phase])
 
   // Auto-scroll to bottom when conversation changes (e.g. loading from menu)
   const conversationLength = conversation.length
