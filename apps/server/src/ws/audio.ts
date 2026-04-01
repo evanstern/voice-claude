@@ -163,7 +163,7 @@ export function attachWebSocket(httpServer: Server) {
 
       if (chunkCount === 0) {
         streamStartedAt = Date.now()
-        log.info('stream started')
+        log.debug('audio stream started')
       }
 
       chunkCount++

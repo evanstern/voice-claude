@@ -282,11 +282,11 @@ export function finalizeInteraction(sessionId: string): void {
 
   log.info({
     interaction: globalStats.totalInteractions,
-    stt: pending.stt,
-    claude: pending.claude,
-    tts: pending.tts,
-    total,
-    cumulative: globalStats.totalCosts.stt + globalStats.totalCosts.claude + globalStats.totalCosts.tts,
+    stt: pending.stt.toFixed(4),
+    claude: pending.claude.toFixed(4),
+    tts: pending.tts.toFixed(4),
+    total: total.toFixed(4),
+    cumulative: (globalStats.totalCosts.stt + globalStats.totalCosts.claude + globalStats.totalCosts.tts).toFixed(4),
   }, 'interaction cost')
 
   // Persist to disk for historical queries

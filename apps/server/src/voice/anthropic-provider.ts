@@ -366,7 +366,7 @@ export class AnthropicProvider implements AIProvider {
               (b): b is Anthropic.TextBlock => b.type === 'text',
             )
             const text = textBlock?.text ?? ''
-            log.info({ iterations, continueCount, preview: text.slice(0, 100) }, 'response complete')
+            log.info({ iterations, continueCount, textLength: text.length }, 'response complete')
             return { text, toolCalls, usage: accumulatedUsage, model }
           }
 

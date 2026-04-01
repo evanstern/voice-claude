@@ -146,7 +146,7 @@ export function useAudioSocket(wsUrl: string | null) {
         audioElementRef.current = handle.audio
         const playbackPromise = handle.promise
           .then(() => {
-            log.info('playback complete')
+            log.debug('playback complete')
             audioElementRef.current = null
             setState((s) => ({ ...s, phase: 'done' }))
           })
@@ -208,12 +208,12 @@ export function useAudioSocket(wsUrl: string | null) {
           break
 
         case 'thinking':
-          log.info('claude is thinking...')
+          log.debug('claude is thinking')
           setState((s) => ({ ...s, phase: 'thinking' }))
           break
 
         case 'tool_use':
-          log.info(`claude using tool: ${msg.name}`)
+          log.debug(`claude using tool: ${msg.name}`)
           setState((s) => ({
             ...s,
             activeTools: [...s.activeTools, msg.name],
