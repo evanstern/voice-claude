@@ -6,6 +6,7 @@ import {
   clientWsMessage,
 } from '@voice-claude/contracts'
 import { type WebSocket, WebSocketServer } from 'ws'
+import { logger } from '../logger.js'
 import {
   appendMessage,
   autoTitle,
@@ -23,6 +24,8 @@ import {
 import { getSTTProvider, transcribe } from '../voice/stt.js'
 import { filterForTTS } from '../voice/text-filter.js'
 import { getTTSProvider } from '../voice/tts.js'
+
+const log = logger.child({ module: 'ws' })
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -81,9 +84,7 @@ export function attachWebSocket(httpServer: Server) {
     let isFirstMessage = true
     let processingAbort: AbortController | null = null
 
-    console.log(
-      `[ws] connected  client=${client} session=${sessionId.slice(0, 8)}`,
-    )
+    log.info({ client, session: sessionId.slice(0, 8) }, 'connected')
 
     ws.on('message', async (data, isBinary) => {
       if (!isBinary) {
@@ -91,13 +92,13 @@ export function attachWebSocket(httpServer: Server) {
         try {
           raw = JSON.parse(data.toString())
         } catch {
-          console.warn('[ws] ignoring malformed JSON')
+          log.warn('ignoring malformed JSON')
           return
         }
 
         const result = clientWsMessage.safeParse(raw)
         if (!result.success) {
-          console.warn('[ws] ignoring unrecognized message', raw)
+          log.warn({ raw }, 'ignoring unrecognized message')
           return
         }
 
@@ -107,9 +108,7 @@ export function attachWebSocket(httpServer: Server) {
         if (msg.type === 'set_conversation') {
           conversationId = msg.conversationId
           isFirstMessage = msg.isFirstMessage ?? true
-          console.log(
-            `[ws] conversation set to ${conversationId?.slice(0, 8) ?? 'none'}`,
-          )
+          log.info({ conversationId: conversationId?.slice(0, 8) ?? 'none' }, 'conversation set')
 
           // Restore Claude session from persisted messages
           clearSession(sessionId)
@@ -133,7 +132,7 @@ export function attachWebSocket(httpServer: Server) {
         // Handle cancel inline — abort any in-progress processing
         if (msg.type === 'cancel') {
           if (processingAbort) {
-            console.log('[ws] cancel     aborting in-progress processing')
+            log.debug('cancel: aborting in-progress processing')
             processingAbort.abort()
             processingAbort = null
           }
@@ -164,7 +163,7 @@ export function attachWebSocket(httpServer: Server) {
 
       if (chunkCount === 0) {
         streamStartedAt = Date.now()
-        console.log('[ws] stream     started')
+        log.info('stream started')
       }
 
       chunkCount++
@@ -175,9 +174,7 @@ export function attachWebSocket(httpServer: Server) {
 
       // Enforce max buffer size to prevent memory exhaustion
       if (totalBytes > MAX_AUDIO_BUFFER_BYTES) {
-        console.warn(
-          `[ws] audio buffer exceeded ${formatBytes(MAX_AUDIO_BUFFER_BYTES)} — clearing`,
-        )
+        log.warn({ maxBytes: MAX_AUDIO_BUFFER_BYTES }, 'audio buffer exceeded limit, clearing')
         audioChunks = []
         totalBytes = 0
         chunkCount = 0
@@ -188,11 +185,7 @@ export function attachWebSocket(httpServer: Server) {
         return
       }
 
-      console.log(
-        `[ws] chunk #${String(chunkCount).padStart(4)}  ` +
-          `size=${formatBytes(bytes).padStart(8)}  ` +
-          `total=${formatBytes(totalBytes).padStart(10)}`,
-      )
+      log.debug({ chunk: chunkCount, size: bytes, total: totalBytes }, 'audio chunk received')
 
       send(ws, {
         type: 'audio_ack',
@@ -210,10 +203,7 @@ export function attachWebSocket(httpServer: Server) {
           ? formatBytes(Math.round(totalBytes / chunkCount))
           : 'n/a'
 
-      console.log(`[ws] closed     code=${code}`)
-      console.log(
-        `[ws] ─── session summary ───────────────────\n[ws]   connection duration : ${duration}\n[ws]   stream duration     : ${streamDuration}\n[ws]   chunks received     : ${chunkCount}\n[ws]   total data          : ${formatBytes(totalBytes)}\n[ws]   avg chunk size      : ${avgChunkSize}\n[ws] ──────────────────────────────────────`,
-      )
+      log.info({ code, duration, streamDuration, chunks: chunkCount, totalBytes, avgChunkSize }, 'connection closed')
 
       // Clean up server-side state for this session
       audioChunks = []
@@ -222,7 +212,7 @@ export function attachWebSocket(httpServer: Server) {
     })
 
     ws.on('error', (err) => {
-      console.error(`[ws] error      ${err.message}`)
+      log.error({ err: err.message }, 'WebSocket error')
     })
 
     send(ws, {
@@ -250,7 +240,7 @@ async function handleControl(
     clearAbort: () => void
   },
 ) {
-  console.log(`[ws] control    type=${msg.type}`)
+  log.debug({ type: msg.type }, 'control message')
 
   switch (msg.type) {
     case 'ping':
@@ -298,14 +288,14 @@ async function handleControl(
         recordSTT(sessionId, result.durationSec, sttProvider.name, 'whisper-1')
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error'
-        console.error(`[ws] stt error  ${message}`)
+        log.error({ err: message }, 'STT error')
         send(ws, { type: 'transcription', text: '', error: message })
         clearAbort()
         break
       }
 
       if (signal.aborted) {
-        console.log('[ws] cancelled after transcription')
+        log.debug('cancelled after transcription')
         clearAbort()
         break
       }
@@ -314,7 +304,7 @@ async function handleControl(
       const { command, text: cleanedText } = parseCommand(userText)
 
       if (command === 'disregard') {
-        console.log('[ws] command    disregard — dropping message')
+        log.info('voice command: disregard, dropping message')
         send(ws, { type: 'transcription', text: userText })
         send(ws, { type: 'command', command: 'disregard' })
         clearAbort()
@@ -322,9 +312,7 @@ async function handleControl(
       }
 
       if (command === 'clear') {
-        console.log(
-          `[ws] command    clear — resetting session ${sessionId.slice(0, 8)}`,
-        )
+        log.info({ session: sessionId.slice(0, 8) }, 'voice command: clear, resetting session')
         clearSession(sessionId)
         send(ws, { type: 'transcription', text: userText })
         send(ws, { type: 'command', command: 'clear' })
@@ -357,7 +345,7 @@ async function handleControl(
       // Detect file-viewing intent and append a terse instruction
       let chatText = userText
       if (looksLikeFileView(userText)) {
-        console.log('[ws] detected file-view intent')
+        log.debug('detected file-view intent')
         chatText +=
           '\n\n[SYSTEM: The file contents will be displayed inline in the chat UI. Just read the file and say "Here\'s [filename]." Do NOT describe, summarize, or explain the contents. One sentence max.]'
       }
@@ -384,7 +372,7 @@ async function handleControl(
         }
 
         if (signal.aborted) {
-          console.log('[ws] cancelled after claude response')
+          log.debug('cancelled after claude response')
           // Still send the response text so it appears in chat, just skip TTS
           send(ws, {
             type: 'claude_response',
@@ -415,7 +403,7 @@ async function handleControl(
             const audioBuffer = await ttsProvider.synthesize(spokenText)
 
             if (signal.aborted) {
-              console.log('[ws] cancelled after TTS synthesis')
+              log.debug('cancelled after TTS synthesis')
               finalizeInteraction(sessionId)
               clearAbort()
               break
@@ -433,7 +421,7 @@ async function handleControl(
           } catch (ttsErr) {
             const ttsMsg =
               ttsErr instanceof Error ? ttsErr.message : 'Unknown error'
-            console.error(`[ws] tts error  ${ttsMsg}`)
+            log.error({ err: ttsMsg }, 'TTS error')
             send(ws, { type: 'tts_error', error: ttsMsg })
           }
         }
@@ -441,7 +429,7 @@ async function handleControl(
         finalizeInteraction(sessionId)
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error'
-        console.error(`[ws] claude error  ${message}`)
+        log.error({ err: message }, 'Claude error')
         send(ws, { type: 'claude_response', text: '', error: message })
         finalizeInteraction(sessionId)
       }
