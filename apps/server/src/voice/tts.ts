@@ -1,4 +1,7 @@
+import { logger } from '../logger.js'
 import type { TTSProvider } from './tts-provider.js'
+
+const log = logger.child({ module: 'tts' })
 
 const PROVIDERS: Record<string, () => Promise<TTSProvider>> = {
   openai: async () => {
@@ -27,7 +30,7 @@ export async function getTTSProvider(): Promise<TTSProvider> {
       )
     }
     cachedProvider = await factory()
-    console.log(`[tts] using provider: ${cachedProvider.name}`)
+    log.info({ provider: cachedProvider.name }, 'using TTS provider')
   }
   return cachedProvider
 }

@@ -1,5 +1,8 @@
+import { logger } from '../logger.js'
 import { getOpenAIClient } from './openai.js'
 import type { TTSOptions, TTSProvider } from './tts-provider.js'
+
+const log = logger.child({ module: 'tts' })
 
 type OpenAIVoice = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
 
@@ -14,9 +17,7 @@ export class OpenAITTSProvider implements TTSProvider {
       'nova') as OpenAIVoice
     const speed = options?.speakingRate ?? 1.0
 
-    console.log(
-      `[tts:openai] synthesizing ${text.length} chars with voice="${voice}"`,
-    )
+    log.debug({ chars: text.length, voice }, 'synthesizing')
     const start = Date.now()
 
     const response = await openai.audio.speech.create({
@@ -31,9 +32,7 @@ export class OpenAITTSProvider implements TTSProvider {
     const buffer = Buffer.from(arrayBuffer)
 
     const elapsed = Date.now() - start
-    console.log(
-      `[tts:openai] done (${elapsed}ms): ${(buffer.byteLength / 1024).toFixed(1)} KB mp3`,
-    )
+    log.info({ elapsedMs: elapsed, sizeKB: (buffer.byteLength / 1024).toFixed(1), format: 'mp3' }, 'synthesis done')
 
     return buffer
   }
