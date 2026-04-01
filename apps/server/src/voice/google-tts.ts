@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { TextToSpeechClient } from '@google-cloud/text-to-speech'
 import type { TTSOptions, TTSProvider } from './tts-provider.js'
 
@@ -8,11 +9,12 @@ export class GoogleTTSProvider implements TTSProvider {
   private client: TextToSpeechClient
 
   constructor() {
-    const credentialsJson = process.env.GOOGLE_TTS_CREDENTIALS
-    if (credentialsJson) {
-      const credentials = JSON.parse(credentialsJson)
+    const credentialsFile = process.env.GOOGLE_TTS_CREDENTIALS_FILE
+    if (credentialsFile) {
+      const credentials = JSON.parse(readFileSync(credentialsFile, 'utf-8'))
       this.client = new TextToSpeechClient({ credentials })
     } else {
+      // Fall back to Application Default Credentials
       this.client = new TextToSpeechClient()
     }
   }

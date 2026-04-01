@@ -15,6 +15,7 @@ export interface ChatParams {
   sessionId: string
   userText: string
   onToolUse?: (name: string, input: string) => void
+  signal?: AbortSignal
 }
 
 export interface ChatResponse {

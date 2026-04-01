@@ -90,12 +90,29 @@ export class ClaudeCodeProvider implements AIProvider {
         cache_read_input_tokens: 0,
       }
       let buffer = ''
+      let aborted = false
 
       // Track tool_use IDs so we can match results back
       const pendingToolUseIds = new Map<
         string,
         { name: string; input: string }
       >()
+
+      // Kill the child process and rotate session ID when abort fires
+      if (params.signal) {
+        const onAbort = () => {
+          aborted = true
+          console.log('[claude-code] abort signal received, killing process')
+          proc.kill('SIGTERM')
+          // Rotate the session ID so the next request doesn't collide
+          this.sessionMap.delete(params.sessionId)
+        }
+        if (params.signal.aborted) {
+          onAbort()
+        } else {
+          params.signal.addEventListener('abort', onAbort, { once: true })
+        }
+      }
 
       const timeout = setTimeout(() => {
         proc.kill('SIGTERM')
@@ -137,6 +154,17 @@ export class ClaudeCodeProvider implements AIProvider {
 
       proc.on('close', (code) => {
         clearTimeout(timeout)
+
+        // If aborted, resolve with whatever we have so far
+        if (aborted) {
+          resolve({
+            text: resultText || '',
+            toolCalls,
+            usage,
+            model: model || 'claude-code',
+          })
+          return
+        }
 
         // Process remaining buffer
         if (buffer.trim()) {

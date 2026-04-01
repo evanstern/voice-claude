@@ -12,7 +12,7 @@ import {
   getConversation,
 } from '../storage/conversations.js'
 import { chat, clearSession, restoreSession } from '../voice/claude.js'
-import { parseCommand } from '../voice/commands.js'
+import { looksLikeFileView, parseCommand } from '../voice/commands.js'
 import {
   cleanupSession,
   finalizeInteraction,
@@ -354,13 +354,22 @@ async function handleControl(
       // Phase 2: Send to Claude
       send(ws, { type: 'thinking' })
 
+      // Detect file-viewing intent and append a terse instruction
+      let chatText = userText
+      if (looksLikeFileView(userText)) {
+        console.log('[ws] detected file-view intent')
+        chatText +=
+          '\n\n[SYSTEM: The file contents will be displayed inline in the chat UI. Just read the file and say "Here\'s [filename]." Do NOT describe, summarize, or explain the contents. One sentence max.]'
+      }
+
       try {
         const response = await chat(
           sessionId,
-          userText,
+          chatText,
           (toolName, toolInput) => {
             send(ws, { type: 'tool_use', name: toolName, input: toolInput })
           },
+          signal,
         )
 
         recordClaude(sessionId, response.usage, response.model)
