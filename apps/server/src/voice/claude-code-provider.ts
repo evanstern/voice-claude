@@ -20,13 +20,18 @@ const PROCESS_TIMEOUT_MS = 120_000
 export class ClaudeCodeProvider implements AIProvider {
   readonly name = 'claude-code'
 
-  // Map our sessionId -> Claude Code --session-id UUID.
-  // Claude Code manages its own conversation history per session-id,
+  // Map our sessionId -> Claude Code session UUID.
+  // Claude Code manages its own conversation history per session,
   // so we just need to keep the mapping stable.
   private sessionMap = new Map<string, string>()
 
+  // Track whether we've made at least one call for a session.
+  // First call uses --session-id, subsequent calls use --resume.
+  private hasCalledSession = new Set<string>()
+
   async chat(params: ChatParams): Promise<ChatResponse> {
     const ccSessionId = this.getOrCreateSessionId(params.sessionId)
+    const isFirstCall = !this.hasCalledSession.has(ccSessionId)
 
     const args = [
       '-p',
@@ -34,8 +39,11 @@ export class ClaudeCodeProvider implements AIProvider {
       '--output-format',
       'stream-json',
       '--verbose',
-      '--session-id',
-      ccSessionId,
+      // First call: create session with --session-id
+      // Subsequent calls: resume with --resume to continue conversation
+      ...(isFirstCall
+        ? ['--session-id', ccSessionId]
+        : ['--resume', ccSessionId]),
       '--permission-mode',
       process.env.CLAUDE_CODE_PERMISSION_MODE ?? 'bypassPermissions',
       '--append-system-prompt',
@@ -69,6 +77,8 @@ export class ClaudeCodeProvider implements AIProvider {
         )
         return
       }
+
+      this.hasCalledSession.add(ccSessionId)
 
       let resultText = ''
       const toolCalls: ChatResponse['toolCalls'] = []
@@ -172,6 +182,10 @@ export class ClaudeCodeProvider implements AIProvider {
 
   clearSession(sessionId: string): void {
     // Discard the mapping so the next chat() call starts a fresh Claude Code session
+    const ccSessionId = this.sessionMap.get(sessionId)
+    if (ccSessionId) {
+      this.hasCalledSession.delete(ccSessionId)
+    }
     this.sessionMap.delete(sessionId)
   }
 
