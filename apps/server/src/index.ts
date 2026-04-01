@@ -1,7 +1,10 @@
 import type { Server } from 'node:http'
 import { serve } from '@hono/node-server'
 import { app } from './app.js'
+import { logger } from './logger.js'
 import { attachWebSocket } from './ws/audio.js'
+
+const log = logger.child({ module: 'server' })
 
 if (!process.env.PORT) {
   throw new Error('Missing required environment variable: PORT')
@@ -9,8 +12,8 @@ if (!process.env.PORT) {
 const port = Number.parseInt(process.env.PORT, 10)
 
 const server = serve({ fetch: app.fetch, port }, () => {
-  console.log(`Server running on http://localhost:${port}`)
-  console.log(`WebSocket available at ws://localhost:${port}/ws/audio`)
+  log.info({ port }, 'server started')
+  log.info({ port, path: '/ws/audio' }, 'WebSocket endpoint available')
 })
 
 // serve() returns ServerType (Server | Http2Server | Http2SecureServer);
@@ -18,19 +21,19 @@ const server = serve({ fetch: app.fetch, port }, () => {
 const wss = attachWebSocket(server as Server)
 
 function gracefulShutdown(signal: string) {
-  console.log(`[server] received ${signal}, shutting down gracefully...`)
+  log.info({ signal }, 'received shutdown signal')
 
   for (const client of wss.clients) {
     client.close(1001, 'Server shutting down')
   }
 
   server.close(() => {
-    console.log('[server] HTTP server closed')
+    log.info('HTTP server closed')
     process.exit(0)
   })
 
   setTimeout(() => {
-    console.log('[server] forced shutdown after timeout')
+    log.warn('forced shutdown after timeout')
     process.exit(1)
   }, 5000).unref()
 }
