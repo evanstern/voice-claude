@@ -9,6 +9,7 @@ google-credentials.json
 .DS_Store
 .turbo
 .claude/worktrees/
+.worktrees/
 data/
 models/piper/*.onnx
 models/piper/*.onnx.json
