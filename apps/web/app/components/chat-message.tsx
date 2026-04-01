@@ -131,49 +131,49 @@ export function ChatMessage({
   const isUser = sender === 'user'
 
   return (
-    <div
-      className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'} animate-fade-in-up`}
-    >
+    <div className="flex flex-col w-full animate-fade-in-up">
       <div
-        className={`max-w-[85%] md:max-w-[75%] ${isUser ? 'order-1' : 'order-1'}`}
+        className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'}`}
       >
-        {/* Role label */}
-        <p
-          className={`text-xs font-medium mb-1 ${
-            isUser
-              ? 'text-right text-muted-foreground'
-              : 'text-left text-primary/80'
-          }`}
-        >
-          {isUser ? 'You' : 'Claude'}
-        </p>
+        <div className="max-w-[85%] md:max-w-[75%]">
+          {/* Role label */}
+          <p
+            className={`text-xs font-medium mb-1 ${
+              isUser
+                ? 'text-right text-muted-foreground'
+                : 'text-left text-primary/80'
+            }`}
+          >
+            {isUser ? 'You' : 'Claude'}
+          </p>
 
-        {/* Message bubble */}
-        <div
-          className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-            isUser
-              ? 'bg-primary/15 text-foreground rounded-br-md'
-              : 'bg-card border border-border text-foreground rounded-bl-md'
-          }`}
-        >
-          {error ? (
-            <p className="text-destructive">{error}</p>
-          ) : isUser ? (
-            <p className="whitespace-pre-wrap">{content}</p>
-          ) : (
-            <MarkdownContent content={content} />
-          )}
-        </div>
-
-        {/* Tool calls (shown below assistant messages) */}
-        {!isUser && toolCalls && toolCalls.length > 0 && (
-          <div className="mt-2 flex flex-col gap-1.5">
-            {toolCalls.map((tc, i) => (
-              <ToolCallItem key={`${tc.name}-${i}`} toolCall={tc} />
-            ))}
+          {/* Message bubble */}
+          <div
+            className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+              isUser
+                ? 'bg-primary/15 text-foreground rounded-br-md'
+                : 'bg-card border border-border text-foreground rounded-bl-md'
+            }`}
+          >
+            {error ? (
+              <p className="text-destructive">{error}</p>
+            ) : isUser ? (
+              <p className="whitespace-pre-wrap">{content}</p>
+            ) : (
+              <MarkdownContent content={content} />
+            )}
           </div>
-        )}
+        </div>
       </div>
+
+      {/* Tool calls — full width, outside the message bubble */}
+      {!isUser && toolCalls && toolCalls.length > 0 && (
+        <div className="mt-2 flex flex-col gap-1.5 w-full">
+          {toolCalls.map((tc, i) => (
+            <ToolCallItem key={`${tc.name}-${i}`} toolCall={tc} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

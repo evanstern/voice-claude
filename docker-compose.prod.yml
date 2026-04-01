@@ -12,9 +12,11 @@ services:
       NODE_ENV: production
       WORK_DIR: /workspace
       PIPER_URL: http://piper:5000
+      GOOGLE_TTS_CREDENTIALS_FILE: /secrets/google-credentials.json
     volumes:
       - ${WORK_DIR:-./workspace}:/workspace
       - ${CONVERSATIONS_DIR:-./data/conversations}:/app/data/conversations
+      - ./google-credentials.json:/secrets/google-credentials.json:ro
     depends_on:
       piper:
         condition: service_healthy

@@ -48,6 +48,19 @@ const COMMANDS: CommandDefinition[] = [
  *   parseCommand("disregard")
  *     => { command: "disregard", text: "" }
  */
+const FILE_VIEW_PATTERNS = [
+  /\b(show|open|display|view|see|read|cat|print|look at)\b.*\b(file|contents?|code|package\.json|tsconfig|config|readme|makefile|dockerfile)\b/i,
+  /\b(what'?s in|what does|can i see|let me see|pull up)\b.*\b(file|the)\b/i,
+  /\b(show|open|display|view|see|read|cat)\b\s+\S+\.\w{1,5}\s*$/i,
+]
+
+/**
+ * Returns true if the transcription looks like a request to view a file.
+ */
+export function looksLikeFileView(text: string): boolean {
+  return FILE_VIEW_PATTERNS.some((pattern) => pattern.test(text))
+}
+
 export function parseCommand(transcription: string): VoiceCommandResult {
   const trimmed = transcription.trim()
   const lower = trimmed.toLowerCase()

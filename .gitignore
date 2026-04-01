@@ -4,6 +4,7 @@ build/
 .react-router/
 .env
 .env.local
+google-credentials.json
 *.log
 .DS_Store
 .turbo
