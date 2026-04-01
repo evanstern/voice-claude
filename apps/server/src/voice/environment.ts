@@ -1,7 +1,9 @@
 import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
+import { logger } from '../logger.js'
 
 const execAsync = promisify(exec)
+const log = logger.child({ module: 'env' })
 
 interface ToolInfo {
   binary: string
@@ -59,9 +61,7 @@ export async function discoverEnvironment(): Promise<string> {
 
   cachedCapabilities = `\nAvailable CLI tools: ${toolList}.`
 
-  console.log(
-    `[environment] discovered tools: ${available.map((t) => t.binary).join(', ')}`,
-  )
+  log.info({ tools: available.map((t) => t.binary) }, 'discovered CLI tools')
 
   return cachedCapabilities
 }

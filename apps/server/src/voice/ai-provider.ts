@@ -1,5 +1,8 @@
+import { logger } from '../logger.js'
 import { AnthropicProvider } from './anthropic-provider.js'
 import { ClaudeCodeProvider } from './claude-code-provider.js'
+
+const log = logger.child({ module: 'ai' })
 
 export interface AIProvider {
   readonly name: string
@@ -51,6 +54,6 @@ export function getAIProvider(): AIProvider {
   }
 
   cached = factory()
-  console.log(`[ai] using provider: ${cached.name}`)
+  log.info({ provider: cached.name }, 'using AI provider')
   return cached
 }

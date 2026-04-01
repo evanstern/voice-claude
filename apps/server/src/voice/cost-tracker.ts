@@ -1,6 +1,9 @@
 // Per-interaction cost tracking for STT, Claude, and TTS API calls.
 
+import { logger } from '../logger.js'
 import { appendCostRecord } from '../storage/costs.js'
+
+const log = logger.child({ module: 'cost' })
 
 // Pricing rates
 const RATES = {
@@ -277,11 +280,14 @@ export function finalizeInteraction(sessionId: string): void {
   const pending = pendingCosts.get(sessionId) ?? { stt: 0, claude: 0, tts: 0 }
   const total = pending.stt + pending.claude + pending.tts
 
-  console.log(
-    `[cost] interaction #${globalStats.totalInteractions}: ` +
-      `stt=$${pending.stt.toFixed(4)} claude=$${pending.claude.toFixed(4)} tts=$${pending.tts.toFixed(4)} ` +
-      `total=$${total.toFixed(4)} | cumulative=$${(globalStats.totalCosts.stt + globalStats.totalCosts.claude + globalStats.totalCosts.tts).toFixed(4)}`,
-  )
+  log.info({
+    interaction: globalStats.totalInteractions,
+    stt: pending.stt,
+    claude: pending.claude,
+    tts: pending.tts,
+    total,
+    cumulative: globalStats.totalCosts.stt + globalStats.totalCosts.claude + globalStats.totalCosts.tts,
+  }, 'interaction cost')
 
   // Persist to disk for historical queries
   const usage = pendingUsage.get(sessionId) ?? {
@@ -299,7 +305,7 @@ export function finalizeInteraction(sessionId: string): void {
     costs: { ...pending },
     usage: { ...usage },
     providers,
-  }).catch((err) => console.error('[cost] failed to persist record:', err))
+  }).catch((err) => log.error({ err }, 'failed to persist cost record'))
 
   pendingCosts.delete(sessionId)
   pendingUsage.delete(sessionId)
