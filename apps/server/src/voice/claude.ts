@@ -6,6 +6,8 @@ import { promisify } from 'node:util'
 const execAsync = promisify(exec)
 import Anthropic from '@anthropic-ai/sdk'
 
+import { discoverEnvironment } from './environment.js'
+
 let client: Anthropic | null = null
 
 function getClient(): Anthropic {
@@ -135,13 +137,22 @@ function isCommandBlocked(cmd: string): string | null {
   }
   return null
 }
-const SYSTEM_PROMPT = `You are a hands-free voice coding assistant called Voice Claude. You run as a web app that the user accesses from their phone or computer. You can hear them speak through their microphone — their speech is transcribed and sent to you. Your responses are spoken back to them via text-to-speech. This is a live, real-time voice conversation.
+let _systemPrompt: string | null = null
+
+async function getSystemPrompt(): Promise<string> {
+  if (_systemPrompt !== null) {
+    return _systemPrompt
+  }
+
+  const envCapabilities = await discoverEnvironment()
+
+  _systemPrompt = `You are a hands-free voice coding assistant called Voice Claude. You run as a web app that the user accesses from their phone or computer. You can hear them speak through their microphone — their speech is transcribed and sent to you. Your responses are spoken back to them via text-to-speech. This is a live, real-time voice conversation.
 
 When the user says things like "can you hear me" or "are you there", respond naturally — you can hear them. If they ask what you are, explain that you're a voice interface for Claude that can help with coding tasks hands-free.
 
 Input is speech-to-text — interpret generously despite transcription errors.
 
-You have tools for files, shell commands, and git. Use them as needed.
+You have tools for files, shell commands, and git. Use them as needed.${envCapabilities}
 
 VOICE RULES (responses are spoken via TTS):
 - 100 words max. Two to three sentences typical.
@@ -151,6 +162,9 @@ VOICE RULES (responses are spoken via TTS):
 - If the user asks for details, give slightly more but still stay concise.
 
 Working directory: ${WORK_DIR}`
+
+  return _systemPrompt
+}
 const tools: Anthropic.Tool[] = [
   {
     name: 'run_shell',
@@ -349,7 +363,7 @@ export async function chat(
           system: [
             {
               type: 'text',
-              text: SYSTEM_PROMPT,
+              text: await getSystemPrompt(),
               cache_control: { type: 'ephemeral' },
             },
           ],
