@@ -5,8 +5,11 @@ import { promisify } from 'node:util'
 
 const execAsync = promisify(exec)
 import Anthropic from '@anthropic-ai/sdk'
+import { logger } from '../logger.js'
 import type { AIProvider, ChatParams, ChatResponse } from './ai-provider.js'
 import { discoverEnvironment } from './environment.js'
+
+const log = logger.child({ module: 'claude' })
 
 // --- Model routing ---
 
@@ -190,10 +193,10 @@ async function executeTool(
   switch (name) {
     case 'run_shell': {
       const cmd = input.command ?? ''
-      console.log(`[claude] tool run_shell: ${cmd}`)
+      log.debug({ cmd }, 'tool run_shell')
       const blocked = isCommandBlocked(cmd)
       if (blocked) {
-        console.log(`[claude] blocked command: ${cmd}`)
+        log.warn({ cmd, reason: blocked }, 'blocked command')
         return `Error: ${blocked}`
       }
       try {
@@ -216,7 +219,7 @@ async function executeTool(
       if (!resolved.startsWith(resolvedWorkDir)) {
         return 'Error: access denied — path is outside the working directory'
       }
-      console.log(`[claude] tool read_file: ${resolved}`)
+      log.debug({ path: resolved }, 'tool read_file')
       if (!existsSync(resolved)) {
         return `Error: file not found: ${resolved}`
       }
@@ -252,9 +255,7 @@ export class AnthropicProvider implements AIProvider {
       const now = Date.now()
       for (const [id, lastActive] of this.sessionLastActive) {
         if (now - lastActive > SESSION_TTL_MS) {
-          console.log(
-            `[claude] evicting stale session ${id.slice(0, 8)} (inactive ${Math.round((now - lastActive) / 1000 / 60)}m)`,
-          )
+          log.debug({ session: id.slice(0, 8), inactiveMin: Math.round((now - lastActive) / 1000 / 60) }, 'evicting stale session')
           this.sessions.delete(id)
           this.sessionLastActive.delete(id)
         }
@@ -300,9 +301,7 @@ export class AnthropicProvider implements AIProvider {
     const MAX_CONTINUES = 3
 
     let model = pickModel(sessionId, userText)
-    console.log(
-      `[claude] model routing: ${model} (mode=${getModelMode()}, session=${sessionId})`,
-    )
+    log.info({ model, mode: getModelMode(), session: sessionId }, 'model routing')
 
     const MAX_RETRIES = 3
     const createWithRetry = async (
@@ -315,9 +314,7 @@ export class AnthropicProvider implements AIProvider {
           const status = (err as { status?: number }).status
           if ((status === 429 || status === 529) && attempt < MAX_RETRIES) {
             const delay = 1000 * 2 ** (attempt - 1)
-            console.log(
-              `[claude] ${status} error on attempt ${attempt}/${MAX_RETRIES}, retrying in ${delay}ms`,
-            )
+            log.warn({ status, attempt, maxRetries: MAX_RETRIES, delayMs: delay }, 'rate limit error, retrying')
             await new Promise((r) => setTimeout(r, delay))
             continue
           }
@@ -334,9 +331,7 @@ export class AnthropicProvider implements AIProvider {
         while (iterations < MAX_ITERATIONS) {
           iterations++
 
-          console.log(
-            `[claude] sending request to ${model} (iteration ${iterations}, continue ${continueCount})`,
-          )
+          log.debug({ model, iteration: iterations, continueCount }, 'sending API request')
           const response = await createWithRetry({
             model,
             max_tokens: 4096,
@@ -354,9 +349,7 @@ export class AnthropicProvider implements AIProvider {
           const cacheRead = response.usage.cache_read_input_tokens ?? 0
           const cacheCreation = response.usage.cache_creation_input_tokens ?? 0
           if (cacheRead > 0 || cacheCreation > 0) {
-            console.log(
-              `[claude] cache stats: read=${cacheRead} tokens, creation=${cacheCreation} tokens, input=${response.usage.input_tokens} tokens`,
-            )
+            log.debug({ cacheRead, cacheCreation, inputTokens: response.usage.input_tokens }, 'cache stats')
           }
 
           messages.push({ role: 'assistant', content: response.content })
@@ -373,9 +366,7 @@ export class AnthropicProvider implements AIProvider {
               (b): b is Anthropic.TextBlock => b.type === 'text',
             )
             const text = textBlock?.text ?? ''
-            console.log(
-              `[claude] response (${iterations} iterations, ${continueCount} continues): "${text.slice(0, 100)}${text.length > 100 ? '...' : ''}"`,
-            )
+            log.info({ iterations, continueCount, preview: text.slice(0, 100) }, 'response complete')
             return { text, toolCalls, usage: accumulatedUsage, model }
           }
 
@@ -385,9 +376,7 @@ export class AnthropicProvider implements AIProvider {
               getModelMode() === 'auto' &&
               iterations >= HAIKU_TOOL_ESCALATION_THRESHOLD
             ) {
-              console.log(
-                `[claude] Haiku hit ${iterations} tool iterations — escalating to Sonnet`,
-              )
+              log.info({ iterations }, 'Haiku hit tool iteration threshold, escalating to Sonnet')
               model = MODEL_SONNET
             }
 
@@ -455,9 +444,7 @@ export class AnthropicProvider implements AIProvider {
           error.error?.type === 'invalid_request_error'
         ) {
           continueCount++
-          console.log(
-            `[claude] hit API tool limit, auto-continuing (${continueCount}/${MAX_CONTINUES})`,
-          )
+          log.warn({ continueCount, maxContinues: MAX_CONTINUES }, 'hit API tool limit, auto-continuing')
 
           if (continueCount > MAX_CONTINUES) {
             return {
@@ -503,8 +490,6 @@ export class AnthropicProvider implements AIProvider {
       }
     }
     this.sessions.set(sessionId, messages)
-    console.log(
-      `[claude] restored session ${sessionId.slice(0, 8)} with ${messages.length} messages`,
-    )
+    log.info({ session: sessionId.slice(0, 8), messageCount: messages.length }, 'session restored')
   }
 }
