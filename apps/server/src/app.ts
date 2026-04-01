@@ -1,10 +1,14 @@
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
 import { Hono } from 'hono'
+import { pinoLogger } from 'hono-pino'
 import { cors } from 'hono/cors'
+import { logger } from './logger.js'
 import { createContext } from './trpc/context.js'
 import { appRouter } from './trpc/router.js'
 
 export const app = new Hono()
+
+app.use('/*', pinoLogger({ pino: logger }))
 
 app.get('/health', (c) => c.json({ status: 'ok' }))
 

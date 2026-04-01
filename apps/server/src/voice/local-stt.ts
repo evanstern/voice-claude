@@ -3,7 +3,10 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
+import { logger } from '../logger.js'
 import type { STTProvider, STTResult } from './stt-provider.js'
+
+const log = logger.child({ module: 'stt' })
 
 const execFileAsync = promisify(execFile)
 
@@ -32,8 +35,9 @@ export class LocalSTTProvider implements STTProvider {
     const wavPath = join(tempDir, 'input.wav')
 
     try {
-      console.log(
-        `[stt:local] transcribing ${(audioBuffer.byteLength / 1024).toFixed(1)} KB of ${mimeType}`,
+      log.debug(
+        { sizeKB: (audioBuffer.byteLength / 1024).toFixed(1), mimeType },
+        'transcribing',
       )
       const start = Date.now()
 
@@ -70,8 +74,9 @@ export class LocalSTTProvider implements STTProvider {
       // Parse the whisper-cpp output
       const { text, durationSec } = this.parseOutput(stdout)
 
-      console.log(
-        `[stt:local] result (${elapsed}ms, ${durationSec.toFixed(1)}s audio): "${text}"`,
+      log.info(
+        { elapsedMs: elapsed, durationSec, text },
+        'transcription result',
       )
       return { text, durationSec }
     } finally {

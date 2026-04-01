@@ -1,6 +1,9 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { logger } from '../logger.js'
 import type { AIProvider, ChatParams, ChatResponse } from './ai-provider.js'
+
+const log = logger.child({ module: 'claude-code' })
 
 const WORK_DIR = process.env.WORK_DIR ?? process.cwd()
 
@@ -102,7 +105,7 @@ export class ClaudeCodeProvider implements AIProvider {
       if (params.signal) {
         const onAbort = () => {
           aborted = true
-          console.log('[claude-code] abort signal received, killing process')
+          log.info('abort signal received, killing process')
           proc.kill('SIGTERM')
           // Rotate the session ID so the next request doesn't collide
           this.sessionMap.delete(params.sessionId)
@@ -148,7 +151,7 @@ export class ClaudeCodeProvider implements AIProvider {
       proc.stderr?.on('data', (chunk: Buffer) => {
         const text = chunk.toString().trim()
         if (text) {
-          console.error(`[claude-code] stderr: ${text}`)
+          log.error({ stderr: text }, 'process stderr')
         }
       })
 

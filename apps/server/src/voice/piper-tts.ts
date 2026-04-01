@@ -1,4 +1,7 @@
+import { logger } from '../logger.js'
 import type { TTSOptions, TTSProvider } from './tts-provider.js'
+
+const log = logger.child({ module: 'tts' })
 
 const DEFAULT_PIPER_URL = 'http://localhost:5000'
 
@@ -13,12 +16,12 @@ export class PiperTTSProvider implements TTSProvider {
     this.baseUrl = process.env.PIPER_URL ?? DEFAULT_PIPER_URL
     this.defaultVoice = process.env.PIPER_VOICE
 
-    console.log(`[tts:piper] using service at ${this.baseUrl}`)
+    log.info({ url: this.baseUrl }, 'using Piper TTS service')
   }
 
   async synthesize(text: string, options?: TTSOptions): Promise<Buffer> {
     const start = Date.now()
-    console.log(`[tts:piper] synthesizing ${text.length} chars`)
+    log.debug({ chars: text.length }, 'synthesizing')
 
     const speaker = options?.voice ?? this.defaultVoice
 
@@ -40,8 +43,13 @@ export class PiperTTSProvider implements TTSProvider {
     const wav = Buffer.from(arrayBuffer)
 
     const elapsed = Date.now() - start
-    console.log(
-      `[tts:piper] done (${elapsed}ms): ${(wav.byteLength / 1024).toFixed(1)} KB wav`,
+    log.info(
+      {
+        elapsedMs: elapsed,
+        sizeKB: (wav.byteLength / 1024).toFixed(1),
+        format: 'wav',
+      },
+      'synthesis done',
     )
 
     return wav

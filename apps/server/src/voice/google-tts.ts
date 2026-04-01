@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { TextToSpeechClient } from '@google-cloud/text-to-speech'
+import { logger } from '../logger.js'
 import type { TTSOptions, TTSProvider } from './tts-provider.js'
+
+const log = logger.child({ module: 'tts' })
 
 export class GoogleTTSProvider implements TTSProvider {
   readonly name = 'google'
@@ -28,9 +31,7 @@ export class GoogleTTSProvider implements TTSProvider {
     const format = options?.format ?? this.defaultFormat
     const audioEncoding = format === 'mp3' ? 'MP3' : 'OGG_OPUS'
 
-    console.log(
-      `[tts:google] synthesizing ${text.length} chars with voice="${voice}" format=${audioEncoding}`,
-    )
+    log.debug({ chars: text.length, voice, audioEncoding }, 'synthesizing')
     const start = Date.now()
 
     const [response] = await this.client.synthesizeSpeech({
@@ -48,8 +49,13 @@ export class GoogleTTSProvider implements TTSProvider {
     const buffer = Buffer.from(response.audioContent as Uint8Array)
 
     const elapsed = Date.now() - start
-    console.log(
-      `[tts:google] done (${elapsed}ms): ${(buffer.byteLength / 1024).toFixed(1)} KB ${format}`,
+    log.info(
+      {
+        elapsedMs: elapsed,
+        sizeKB: (buffer.byteLength / 1024).toFixed(1),
+        format,
+      },
+      'synthesis done',
     )
 
     return buffer

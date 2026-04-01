@@ -1,6 +1,9 @@
+import { logger } from '../logger.js'
 import { LocalSTTProvider } from './local-stt.js'
 import { OpenAISTTProvider } from './openai-stt.js'
 import type { STTProvider, STTResult } from './stt-provider.js'
+
+const log = logger.child({ module: 'stt' })
 
 export type { STTProvider, STTResult }
 export type { STTResult as TranscriptionResult }
@@ -31,7 +34,7 @@ export function getSTTProvider(): STTProvider {
   }
 
   cachedProvider = factory()
-  console.log(`[stt] using provider: ${cachedProvider.name}`)
+  log.info({ provider: cachedProvider.name }, 'using STT provider')
   return cachedProvider
 }
 
