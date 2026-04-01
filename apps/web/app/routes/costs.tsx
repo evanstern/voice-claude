@@ -34,7 +34,7 @@ interface ProviderModelEntry {
   count: number
 }
 
-interface Stats {
+interface CostHistory {
   totalInteractions: number
   totalCost: number
   avgCostPerInteraction: number
@@ -48,9 +48,78 @@ interface Stats {
     ttsChars: number
   }
   byProviderModel: ProviderModelEntry[]
+  periodStart: string
+  periodEnd: string
+}
+
+interface SessionStats {
   sessions: SessionSummary[]
   activeSessions: number
-  startedAt: string
+}
+
+type Period = 'today' | '7d' | '30d' | 'all'
+
+const PERIODS: { key: Period; label: string }[] = [
+  { key: 'today', label: 'Today' },
+  { key: '7d', label: '7 Days' },
+  { key: '30d', label: '30 Days' },
+  { key: 'all', label: 'All Time' },
+]
+
+function getPeriodRange(period: Period): { from: string; to: string } {
+  const now = new Date()
+  const endOfDay = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    23,
+    59,
+    59,
+    999,
+  )
+  const to = endOfDay.toISOString()
+
+  switch (period) {
+    case 'today': {
+      const startOfDay = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+      )
+      return { from: startOfDay.toISOString(), to }
+    }
+    case '7d': {
+      const start = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() - 6,
+      )
+      return { from: start.toISOString(), to }
+    }
+    case '30d': {
+      const start = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() - 29,
+      )
+      return { from: start.toISOString(), to }
+    }
+    case 'all':
+      return { from: '2000-01-01T00:00:00.000Z', to }
+  }
+}
+
+function periodLabel(period: Period): string {
+  switch (period) {
+    case 'today':
+      return new Date().toLocaleDateString()
+    case '7d':
+      return 'Last 7 days'
+    case '30d':
+      return 'Last 30 days'
+    case 'all':
+      return 'All time'
+  }
 }
 
 export function meta() {
@@ -129,33 +198,44 @@ function CostBar({
 
 export default function Costs() {
   const { wsConfig } = useOutletContext<RootContext>()
-  const [stats, setStats] = useState<Stats | null>(null)
+  const [history, setHistory] = useState<CostHistory | null>(null)
+  const [sessionStats, setSessionStats] = useState<SessionStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [period, setPeriod] = useState<Period>('today')
 
   const trpc = useMemo(() => {
     if (typeof window === 'undefined' || !wsConfig) return null
     return getClientTRPC(wsConfig.port)
   }, [wsConfig])
 
-  const fetchStats = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     if (!trpc) return
     try {
-      const data = await trpc.stats.query()
-      setStats(data)
+      const range = getPeriodRange(period)
+      const [historyData, statsData] = await Promise.all([
+        trpc.costHistory.query(range),
+        trpc.stats.query(),
+      ])
+      setHistory(historyData)
+      setSessionStats({
+        sessions: statsData.sessions,
+        activeSessions: statsData.activeSessions,
+      })
       setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to fetch stats')
     } finally {
       setLoading(false)
     }
-  }, [trpc])
+  }, [trpc, period])
 
   useEffect(() => {
-    fetchStats()
-    const interval = setInterval(fetchStats, 10_000)
+    setLoading(true)
+    fetchData()
+    const interval = setInterval(fetchData, 10_000)
     return () => clearInterval(interval)
-  }, [fetchStats])
+  }, [fetchData])
 
   return (
     <div className="min-h-screen bg-background">
@@ -185,14 +265,30 @@ export default function Costs() {
             Costs
           </h1>
         </div>
-        {stats && (
-          <span className="text-xs text-muted-foreground">
-            Since {new Date(stats.startedAt).toLocaleDateString()}
-          </span>
-        )}
+        <span className="text-xs text-muted-foreground">
+          {periodLabel(period)}
+        </span>
       </header>
 
       <div className="max-w-2xl mx-auto p-4 space-y-4">
+        {/* Period Selector */}
+        <div className="flex gap-1 p-1 rounded-lg bg-muted">
+          {PERIODS.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              onClick={() => setPeriod(p.key)}
+              className={`flex-1 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                period === p.key
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
         {loading && (
           <div className="flex items-center justify-center py-20">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -207,26 +303,30 @@ export default function Costs() {
           </Card>
         )}
 
-        {stats && !loading && (
+        {history && !loading && (
           <>
             {/* Total Cost */}
             <Card>
               <CardHeader className="pb-2">
                 <CardDescription>Total Spend</CardDescription>
                 <CardTitle className="text-3xl font-mono">
-                  {formatCost(stats.totalCost)}
+                  {formatCost(history.totalCost)}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="flex gap-4 text-sm text-muted-foreground">
-                  <span>{stats.totalInteractions} interactions</span>
+                  <span>{history.totalInteractions} interactions</span>
+                  {sessionStats && (
+                    <>
+                      <span className="text-border">|</span>
+                      <span>
+                        {sessionStats.activeSessions} active session
+                        {sessionStats.activeSessions !== 1 ? 's' : ''}
+                      </span>
+                    </>
+                  )}
                   <span className="text-border">|</span>
-                  <span>
-                    {stats.activeSessions} active session
-                    {stats.activeSessions !== 1 ? 's' : ''}
-                  </span>
-                  <span className="text-border">|</span>
-                  <span>{formatCost(stats.avgCostPerInteraction)} avg</span>
+                  <span>{formatCost(history.avgCostPerInteraction)} avg</span>
                 </div>
               </CardContent>
             </Card>
@@ -242,27 +342,27 @@ export default function Costs() {
               <CardContent className="space-y-4">
                 <CostBar
                   label="Claude (Anthropic)"
-                  cost={stats.costBreakdown.claude}
-                  total={stats.totalCost}
+                  cost={history.costBreakdown.claude}
+                  total={history.totalCost}
                   color="bg-violet-500"
                 />
                 <CostBar
                   label="Speech-to-Text (OpenAI Whisper)"
-                  cost={stats.costBreakdown.stt}
-                  total={stats.totalCost}
+                  cost={history.costBreakdown.stt}
+                  total={history.totalCost}
                   color="bg-emerald-500"
                 />
                 <CostBar
                   label="Text-to-Speech (OpenAI TTS)"
-                  cost={stats.costBreakdown.tts}
-                  total={stats.totalCost}
+                  cost={history.costBreakdown.tts}
+                  total={history.totalCost}
                   color="bg-amber-500"
                 />
               </CardContent>
             </Card>
 
             {/* Cost by Provider & Model */}
-            {stats.byProviderModel.length > 0 && (
+            {history.byProviderModel.length > 0 && (
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">
@@ -273,12 +373,12 @@ export default function Costs() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {stats.byProviderModel.map((entry) => (
+                  {history.byProviderModel.map((entry) => (
                     <CostBar
                       key={`${entry.provider}:${entry.model}`}
                       label={`${entry.provider} / ${entry.model}`}
                       cost={entry.cost}
-                      total={stats.totalCost}
+                      total={history.totalCost}
                       color={providerColor(entry.provider)}
                       detail={`${formatNumber(entry.count)} calls`}
                     />
@@ -299,7 +399,7 @@ export default function Costs() {
                     <div>
                       <p className="text-muted-foreground">STT Duration</p>
                       <p className="font-mono font-medium">
-                        {formatDuration(stats.usage.sttDurationSec)}
+                        {formatDuration(history.usage.sttDurationSec)}
                       </p>
                     </div>
                     <div>
@@ -307,7 +407,7 @@ export default function Costs() {
                         Claude Input Tokens
                       </p>
                       <p className="font-mono font-medium">
-                        {formatNumber(stats.usage.claudeInputTokens)}
+                        {formatNumber(history.usage.claudeInputTokens)}
                       </p>
                     </div>
                     <div>
@@ -315,7 +415,7 @@ export default function Costs() {
                         Claude Output Tokens
                       </p>
                       <p className="font-mono font-medium">
-                        {formatNumber(stats.usage.claudeOutputTokens)}
+                        {formatNumber(history.usage.claudeOutputTokens)}
                       </p>
                     </div>
                   </div>
@@ -323,13 +423,13 @@ export default function Costs() {
                     <div>
                       <p className="text-muted-foreground">TTS Characters</p>
                       <p className="font-mono font-medium">
-                        {formatNumber(stats.usage.ttsChars)}
+                        {formatNumber(history.usage.ttsChars)}
                       </p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Cache Read Tokens</p>
                       <p className="font-mono font-medium">
-                        {formatNumber(stats.usage.claudeCacheReadTokens)}
+                        {formatNumber(history.usage.claudeCacheReadTokens)}
                       </p>
                     </div>
                     <div>
@@ -337,7 +437,7 @@ export default function Costs() {
                         Cache Write Tokens
                       </p>
                       <p className="font-mono font-medium">
-                        {formatNumber(stats.usage.claudeCacheWriteTokens)}
+                        {formatNumber(history.usage.claudeCacheWriteTokens)}
                       </p>
                     </div>
                   </div>
@@ -346,18 +446,19 @@ export default function Costs() {
             </Card>
 
             {/* Active Sessions */}
-            {stats.sessions.length > 0 && (
+            {sessionStats && sessionStats.sessions.length > 0 && (
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">Active Sessions</CardTitle>
                   <CardDescription>
-                    {stats.sessions.length} session
-                    {stats.sessions.length !== 1 ? 's' : ''} with tracked costs
+                    {sessionStats.sessions.length} session
+                    {sessionStats.sessions.length !== 1 ? 's' : ''} with tracked
+                    costs
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {stats.sessions.map((session) => (
+                    {sessionStats.sessions.map((session) => (
                       <div
                         key={session.sessionId}
                         className="flex items-center justify-between py-2 border-b border-border last:border-0"
@@ -398,7 +499,7 @@ export default function Costs() {
             <div className="flex justify-center pb-4">
               <button
                 type="button"
-                onClick={fetchStats}
+                onClick={fetchData}
                 className="text-xs text-muted-foreground hover:text-foreground transition-colors"
               >
                 Auto-refreshes every 10s

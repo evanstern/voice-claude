@@ -1,5 +1,7 @@
 // Per-interaction cost tracking for STT, Claude, and TTS API calls.
 
+import { appendCostRecord } from '../storage/costs.js'
+
 // Pricing rates
 const RATES = {
   // Whisper: $0.006 per minute of audio
@@ -97,6 +99,25 @@ const pendingCosts = new Map<
   { stt: number; claude: number; tts: number }
 >()
 
+// Pending usage metrics for the current interaction (for persistence)
+const pendingUsage = new Map<
+  string,
+  {
+    sttDurationSec: number
+    claudeInputTokens: number
+    claudeOutputTokens: number
+    claudeCacheReadTokens: number
+    claudeCacheWriteTokens: number
+    ttsChars: number
+  }
+>()
+
+// Pending provider entries for the current interaction (for persistence)
+const pendingProviders = new Map<
+  string,
+  Array<{ provider: string; model: string; cost: number }>
+>()
+
 function ensureSession(sessionId: string): SessionStats {
   if (!sessionData.has(sessionId)) {
     globalStats.sessions++
@@ -130,6 +151,36 @@ function ensurePending(sessionId: string): {
   return pending
 }
 
+function ensurePendingUsage(sessionId: string) {
+  let usage = pendingUsage.get(sessionId)
+  if (!usage) {
+    usage = {
+      sttDurationSec: 0,
+      claudeInputTokens: 0,
+      claudeOutputTokens: 0,
+      claudeCacheReadTokens: 0,
+      claudeCacheWriteTokens: 0,
+      ttsChars: 0,
+    }
+    pendingUsage.set(sessionId, usage)
+  }
+  return usage
+}
+
+function addPendingProvider(
+  sessionId: string,
+  provider: string,
+  model: string,
+  cost: number,
+) {
+  let providers = pendingProviders.get(sessionId)
+  if (!providers) {
+    providers = []
+    pendingProviders.set(sessionId, providers)
+  }
+  providers.push({ provider, model, cost })
+}
+
 export function recordSTT(
   sessionId: string,
   durationSec: number,
@@ -146,6 +197,9 @@ export function recordSTT(
 
   const pending = ensurePending(sessionId)
   pending.stt += cost
+  const pu = ensurePendingUsage(sessionId)
+  pu.sttDurationSec += durationSec
+  addPendingProvider(sessionId, provider, model, cost)
   return cost
 }
 
@@ -180,6 +234,12 @@ export function recordClaude(
 
   const pending = ensurePending(sessionId)
   pending.claude += cost
+  const pu = ensurePendingUsage(sessionId)
+  pu.claudeInputTokens += usage.input_tokens
+  pu.claudeOutputTokens += usage.output_tokens
+  pu.claudeCacheReadTokens += usage.cache_read_input_tokens ?? 0
+  pu.claudeCacheWriteTokens += usage.cache_creation_input_tokens ?? 0
+  addPendingProvider(sessionId, 'anthropic', model, cost)
   return cost
 }
 
@@ -199,6 +259,9 @@ export function recordTTS(
 
   const pending = ensurePending(sessionId)
   pending.tts += cost
+  const pu = ensurePendingUsage(sessionId)
+  pu.ttsChars += charCount
+  addPendingProvider(sessionId, provider, model, cost)
   return cost
 }
 
@@ -220,7 +283,27 @@ export function finalizeInteraction(sessionId: string): void {
       `total=$${total.toFixed(4)} | cumulative=$${(globalStats.totalCosts.stt + globalStats.totalCosts.claude + globalStats.totalCosts.tts).toFixed(4)}`,
   )
 
+  // Persist to disk for historical queries
+  const usage = pendingUsage.get(sessionId) ?? {
+    sttDurationSec: 0,
+    claudeInputTokens: 0,
+    claudeOutputTokens: 0,
+    claudeCacheReadTokens: 0,
+    claudeCacheWriteTokens: 0,
+    ttsChars: 0,
+  }
+  const providers = pendingProviders.get(sessionId) ?? []
+  appendCostRecord({
+    timestamp: new Date().toISOString(),
+    sessionId,
+    costs: { ...pending },
+    usage: { ...usage },
+    providers,
+  }).catch((err) => console.error('[cost] failed to persist record:', err))
+
   pendingCosts.delete(sessionId)
+  pendingUsage.delete(sessionId)
+  pendingProviders.delete(sessionId)
 }
 
 /**
@@ -230,6 +313,8 @@ export function finalizeInteraction(sessionId: string): void {
 export function cleanupSession(sessionId: string): void {
   sessionData.delete(sessionId)
   pendingCosts.delete(sessionId)
+  pendingUsage.delete(sessionId)
+  pendingProviders.delete(sessionId)
 }
 
 export function getStats() {
