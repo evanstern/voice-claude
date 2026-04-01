@@ -9,7 +9,7 @@ const VOICE_SYSTEM_PROMPT = [
   'IMPORTANT: Your response will be spoken aloud via text-to-speech.',
   'VOICE RULES:',
   '- 100 words max. Two to three sentences typical.',
-  '- Never read back file contents, code, or long lists. Summarize instead.',
+  '- When the user asks to see or show a file, respond briefly. The file contents are displayed inline in the chat — do not describe, summarize, or read back the contents.',
   '- After tool use, report results conversationally.',
   '- No markdown, code blocks, or bullet points — plain spoken language only.',
 ].join('\n')
