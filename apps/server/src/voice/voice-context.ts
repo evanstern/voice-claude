@@ -18,7 +18,9 @@ const VOICE_RULES = [
   'If the user asks for details, give slightly more but still stay concise.',
 ] as const
 
-export function buildVoiceContext(options: BuildVoiceContextOptions): VoiceContext {
+export function buildVoiceContext(
+  options: BuildVoiceContextOptions,
+): VoiceContext {
   const { workDir, environment, providerHint } = options
 
   const identityLine =
@@ -39,5 +41,5 @@ ${VOICE_RULES.map((r) => `- ${r}`).join('\n')}
 
 Working directory: ${workDir}`
 
-  return { systemPrompt, voiceRules: VOICE_RULES }
+  return { systemPrompt, voiceRules: [...VOICE_RULES] }
 }

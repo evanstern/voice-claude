@@ -4,7 +4,8 @@ import { buildVoiceContext } from '../voice-context.js'
 describe('buildVoiceContext', () => {
   const defaultOptions = {
     workDir: '/workspace',
-    environment: '\nAvailable CLI tools: git (version control), node (Node.js runtime).',
+    environment:
+      '\nAvailable CLI tools: git (version control), node (Node.js runtime).',
   }
 
   it('includes Voice Claude identity', () => {
@@ -31,12 +32,18 @@ describe('buildVoiceContext', () => {
   })
 
   it('mentions Claude Code capabilities when provider hint is claude-code', () => {
-    const ctx = buildVoiceContext({ ...defaultOptions, providerHint: 'claude-code' })
+    const ctx = buildVoiceContext({
+      ...defaultOptions,
+      providerHint: 'claude-code',
+    })
     expect(ctx.systemPrompt).toContain('Claude Code')
   })
 
   it('does not mention Claude Code when provider hint is anthropic', () => {
-    const ctx = buildVoiceContext({ ...defaultOptions, providerHint: 'anthropic' })
+    const ctx = buildVoiceContext({
+      ...defaultOptions,
+      providerHint: 'anthropic',
+    })
     expect(ctx.systemPrompt).not.toContain('Claude Code')
   })
 
