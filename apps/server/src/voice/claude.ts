@@ -1,7 +1,12 @@
 // Thin wrapper that delegates to the configured AI provider.
-// Preserves the original export signatures so audio.ts needs no changes.
+// Preserves the original export signatures so audio.ts can migrate incrementally.
 
-import { type ChatResponse, getAIProvider } from './ai-provider.js'
+import {
+  type ChatParams,
+  type ChatResponse,
+  getAIProvider,
+} from './ai-provider.js'
+import type { VoiceContext } from './voice-context.js'
 
 export type { ChatResponse as ClaudeResponse }
 export type ClaudeUsageResult = ChatResponse['usage']
@@ -11,8 +16,17 @@ export async function chat(
   userText: string,
   onToolUse?: (name: string, input: string) => void,
   signal?: AbortSignal,
+  voiceContext?: VoiceContext,
+  routingHint?: ChatParams['routingHint'],
 ): Promise<ChatResponse> {
-  return getAIProvider().chat({ sessionId, userText, onToolUse, signal })
+  return getAIProvider().chat({
+    sessionId,
+    userText,
+    voiceContext,
+    routingHint,
+    onToolUse,
+    signal,
+  })
 }
 
 export function clearSession(sessionId: string): void {
