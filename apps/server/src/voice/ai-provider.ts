@@ -1,6 +1,7 @@
 import { logger } from '../logger.js'
 import { AnthropicProvider } from './anthropic-provider.js'
 import { ClaudeCodeProvider } from './claude-code-provider.js'
+import type { VoiceContext } from './voice-context.js'
 
 const log = logger.child({ module: 'ai' })
 
@@ -17,6 +18,8 @@ export interface AIProvider {
 export interface ChatParams {
   sessionId: string
   userText: string
+  voiceContext?: VoiceContext
+  routingHint?: 'simple' | 'complex' | null
   onToolUse?: (name: string, input: string) => void
   signal?: AbortSignal
 }
