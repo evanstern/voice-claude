@@ -7,16 +7,6 @@ const log = logger.child({ module: 'claude-code' })
 
 const WORK_DIR = process.env.WORK_DIR ?? process.cwd()
 
-// Voice-specific instructions appended to Claude Code's own system prompt
-const VOICE_SYSTEM_PROMPT = [
-  'IMPORTANT: Your response will be spoken aloud via text-to-speech.',
-  'VOICE RULES:',
-  '- 100 words max. Two to three sentences typical.',
-  '- When the user asks to see or show a file, respond briefly. The file contents are displayed inline in the chat — do not describe, summarize, or read back the contents.',
-  '- After tool use, report results conversationally.',
-  '- No markdown, code blocks, or bullet points — plain spoken language only.',
-].join('\n')
-
 // Default timeout for a single claude invocation (2 minutes)
 const PROCESS_TIMEOUT_MS = 120_000
 
@@ -36,21 +26,22 @@ export class ClaudeCodeProvider implements AIProvider {
     const ccSessionId = this.getOrCreateSessionId(params.sessionId)
     const isFirstCall = !this.hasCalledSession.has(ccSessionId)
 
+    const systemPrompt = params.voiceContext?.systemPrompt ?? ''
+
     const args = [
       '-p',
       params.userText,
       '--output-format',
       'stream-json',
       '--verbose',
-      // First call: create session with --session-id
-      // Subsequent calls: resume with --resume to continue conversation
       ...(isFirstCall
         ? ['--session-id', ccSessionId]
         : ['--resume', ccSessionId]),
       '--permission-mode',
       process.env.CLAUDE_CODE_PERMISSION_MODE ?? 'bypassPermissions',
-      '--append-system-prompt',
-      VOICE_SYSTEM_PROMPT,
+      ...(systemPrompt
+        ? ['--append-system-prompt', systemPrompt]
+        : []),
     ]
 
     // Optionally restrict which tools Claude Code can use
