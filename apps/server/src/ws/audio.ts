@@ -12,8 +12,8 @@ import {
   autoTitle,
   getConversation,
 } from '../storage/conversations.js'
+import { getAIProvider } from '../voice/ai-provider.js'
 import { chat, clearSession, restoreSession } from '../voice/claude.js'
-import { looksLikeFileView, parseCommand } from '../voice/commands.js'
 import {
   cleanupSession,
   finalizeInteraction,
@@ -24,6 +24,7 @@ import {
 import { getSTTProvider, transcribe } from '../voice/stt.js'
 import { filterForTTS } from '../voice/text-filter.js'
 import { getTTSProvider } from '../voice/tts.js'
+import { processVoiceInput } from '../voice/voice-middleware.js'
 
 const log = logger.child({ module: 'ws' })
 
@@ -319,10 +320,15 @@ async function handleControl(
         break
       }
 
-      // Check for voice commands before sending to Claude
-      const { command, text: cleanedText } = parseCommand(userText)
+      // Process voice input through middleware
+      const providerName = getAIProvider().name as 'anthropic' | 'claude-code'
+      const voiceInput = await processVoiceInput({
+        rawText: userText,
+        sessionId,
+        provider: providerName,
+      })
 
-      if (command === 'disregard') {
+      if (voiceInput.command === 'disregard') {
         log.info('voice command: disregard, dropping message')
         send(ws, { type: 'transcription', text: userText })
         send(ws, { type: 'command', command: 'disregard' })
@@ -330,7 +336,7 @@ async function handleControl(
         break
       }
 
-      if (command === 'clear') {
+      if (voiceInput.command === 'clear') {
         log.info(
           { session: sessionId.slice(0, 8) },
           'voice command: clear, resetting session',
@@ -342,21 +348,21 @@ async function handleControl(
         break
       }
 
-      // Use the cleaned text (command keyword stripped) going forward
-      userText = cleanedText
+      send(ws, { type: 'transcription', text: voiceInput.displayText })
 
-      send(ws, { type: 'transcription', text: userText })
-
-      if (!userText) {
+      if (!voiceInput.displayText) {
         clearAbort()
         break
       }
 
-      // Persist user message
+      // Persist user message (clean text without system decorations)
       if (conversationId) {
-        await appendMessage(conversationId, { role: 'user', content: userText })
+        await appendMessage(conversationId, {
+          role: 'user',
+          content: voiceInput.displayText,
+        })
         if (isFirstMessage) {
-          await autoTitle(conversationId, userText)
+          await autoTitle(conversationId, voiceInput.displayText)
           setFirstMessage(false)
         }
       }
@@ -364,22 +370,23 @@ async function handleControl(
       // Phase 2: Send to Claude
       send(ws, { type: 'thinking' })
 
-      // Detect file-viewing intent and append a terse instruction
-      let chatText = userText
-      if (looksLikeFileView(userText)) {
-        log.debug('detected file-view intent')
-        chatText +=
-          '\n\n[SYSTEM: The file contents will be displayed inline in the chat UI. Just read the file and say "Here\'s [filename]." Do NOT describe, summarize, or explain the contents. One sentence max.]'
+      if (voiceInput.operationalIntents.length > 0) {
+        log.debug(
+          { intents: voiceInput.operationalIntents },
+          'detected operational intents',
+        )
       }
 
       try {
         const response = await chat(
           sessionId,
-          chatText,
+          voiceInput.chatText,
           (toolName, toolInput) => {
             send(ws, { type: 'tool_use', name: toolName, input: toolInput })
           },
           signal,
+          voiceInput.voiceContext,
+          voiceInput.routingHint,
         )
 
         recordClaude(sessionId, response.usage, response.model)

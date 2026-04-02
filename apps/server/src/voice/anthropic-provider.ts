@@ -7,7 +7,6 @@ const execAsync = promisify(exec)
 import Anthropic from '@anthropic-ai/sdk'
 import { logger } from '../logger.js'
 import type { AIProvider, ChatParams, ChatResponse } from './ai-provider.js'
-import { discoverEnvironment } from './environment.js'
 
 const log = logger.child({ module: 'claude' })
 
@@ -24,41 +23,15 @@ function getModelMode(): ModelMode {
   return 'auto'
 }
 
-const COMPLEX_TASK_PHRASES = [
-  'refactor',
-  'implement',
-  'debug the',
-  'fix the bug',
-  'fix the error',
-  'rewrite',
-  'redesign',
-  'architect',
-  'write a',
-  'write the',
-  'create a new',
-  'build the',
-  'deploy',
-  'migrate',
-  'explain the code',
-  'explain how',
-  'review the code',
-  'code review',
-]
-
-function looksLikeComplexTask(text: string): boolean {
-  const lower = text.toLowerCase()
-  return COMPLEX_TASK_PHRASES.some((phrase) => lower.includes(phrase))
-}
-
 const HAIKU_TOOL_ESCALATION_THRESHOLD = 3
 
-function pickModel(_sessionId: string, userText: string): string {
+function pickModel(routingHint?: 'complex' | null): string {
   const mode = getModelMode()
 
   if (mode === 'sonnet') return MODEL_SONNET
   if (mode === 'haiku') return MODEL_HAIKU
 
-  if (looksLikeComplexTask(userText)) {
+  if (routingHint === 'complex') {
     return MODEL_SONNET
   }
 
@@ -121,35 +94,6 @@ function isCommandBlocked(cmd: string): string | null {
 }
 
 // --- Tools ---
-
-let _systemPrompt: string | null = null
-
-async function getSystemPrompt(): Promise<string> {
-  if (_systemPrompt !== null) {
-    return _systemPrompt
-  }
-
-  const envCapabilities = await discoverEnvironment()
-
-  _systemPrompt = `You are a hands-free voice coding assistant called Voice Claude. You run as a web app that the user accesses from their phone or computer. You can hear them speak through their microphone — their speech is transcribed and sent to you. Your responses are spoken back to them via text-to-speech. This is a live, real-time voice conversation.
-
-When the user says things like "can you hear me" or "are you there", respond naturally — you can hear them. If they ask what you are, explain that you're a voice interface for Claude that can help with coding tasks hands-free.
-
-Input is speech-to-text — interpret generously despite transcription errors.
-
-You have tools for files, shell commands, and git. Use them as needed.${envCapabilities}
-
-VOICE RULES (responses are spoken via TTS):
-- 100 words max. Two to three sentences typical.
-- When the user asks to see or show a file, respond briefly: "Here's package.json" or "Here's the config file." The file contents are displayed inline in the chat — do not describe, summarize, or read back the contents.
-- After tool use, report results conversationally: "I found 3 matching files" or "The build succeeded with 2 warnings." Don't echo raw output.
-- No markdown, code blocks, or bullet points — plain spoken language only.
-- If the user asks for details, give slightly more but still stay concise.
-
-Working directory: ${WORK_DIR}`
-
-  return _systemPrompt
-}
 
 const tools: Anthropic.Tool[] = [
   {
@@ -306,7 +250,7 @@ export class AnthropicProvider implements AIProvider {
     let continueCount = 0
     const MAX_CONTINUES = 3
 
-    let model = pickModel(sessionId, userText)
+    let model = pickModel(params.routingHint)
     log.info(
       { model, mode: getModelMode(), session: sessionId },
       'model routing',
@@ -350,13 +294,15 @@ export class AnthropicProvider implements AIProvider {
           const response = await createWithRetry({
             model,
             max_tokens: 4096,
-            system: [
-              {
-                type: 'text',
-                text: await getSystemPrompt(),
-                cache_control: { type: 'ephemeral' },
-              },
-            ],
+            system: params.voiceContext
+              ? [
+                  {
+                    type: 'text',
+                    text: params.voiceContext.systemPrompt,
+                    cache_control: { type: 'ephemeral' },
+                  },
+                ]
+              : [],
             tools,
             messages,
           })
