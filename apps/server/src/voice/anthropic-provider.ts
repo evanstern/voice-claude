@@ -25,7 +25,7 @@ function getModelMode(): ModelMode {
 
 const HAIKU_TOOL_ESCALATION_THRESHOLD = 3
 
-function pickModel(routingHint?: 'simple' | 'complex' | null): string {
+function pickModel(routingHint?: 'complex' | null): string {
   const mode = getModelMode()
 
   if (mode === 'sonnet') return MODEL_SONNET

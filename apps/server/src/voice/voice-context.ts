@@ -10,8 +10,7 @@ interface BuildVoiceContextOptions {
 }
 
 const VOICE_RULES = [
-  '100 words max',
-  'Two to three sentences typical.',
+  '100 words max. Two to three sentences typical.',
   'When the user asks to see or show a file, respond briefly: "Here\'s package.json" or "Here\'s the config file." The file contents are displayed inline in the chat — do not describe, summarize, or read back the contents.',
   'After tool use, report results conversationally: "I found 3 matching files" or "The build succeeded with 2 warnings." Don\'t echo raw output.',
   'No markdown, code blocks, or bullet points — plain spoken language only.',

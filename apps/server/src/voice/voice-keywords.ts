@@ -1,6 +1,6 @@
 export type VoiceCommandType = 'disregard' | 'clear'
 export type OperationalIntent = 'file-view' | 'health-check'
-export type RoutingHint = 'simple' | 'complex'
+export type RoutingHint = 'complex'
 
 export interface KeywordResult {
   command: VoiceCommandType | null

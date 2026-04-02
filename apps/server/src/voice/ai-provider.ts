@@ -19,7 +19,7 @@ export interface ChatParams {
   sessionId: string
   userText: string
   voiceContext?: VoiceContext
-  routingHint?: 'simple' | 'complex' | null
+  routingHint?: 'complex' | null
   onToolUse?: (name: string, input: string) => void
   signal?: AbortSignal
 }

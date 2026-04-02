@@ -27,7 +27,9 @@ describe('buildVoiceContext', () => {
 
   it('includes voice rules', () => {
     const ctx = buildVoiceContext(defaultOptions)
-    expect(ctx.voiceRules).toContain('100 words max')
+    expect(ctx.voiceRules).toContain(
+      '100 words max. Two to three sentences typical.',
+    )
     expect(ctx.systemPrompt).toContain('100 words max')
   })
 
