@@ -39,9 +39,7 @@ export class ClaudeCodeProvider implements AIProvider {
         : ['--resume', ccSessionId]),
       '--permission-mode',
       process.env.CLAUDE_CODE_PERMISSION_MODE ?? 'bypassPermissions',
-      ...(systemPrompt
-        ? ['--append-system-prompt', systemPrompt]
-        : []),
+      ...(systemPrompt ? ['--append-system-prompt', systemPrompt] : []),
     ]
 
     // Optionally restrict which tools Claude Code can use

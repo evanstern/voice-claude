@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 
 // Mock the environment module to avoid actual shell calls
 vi.mock('../environment.js', () => ({
-  discoverEnvironment: vi.fn().mockResolvedValue(
-    '\nAvailable CLI tools: git (version control).',
-  ),
+  discoverEnvironment: vi
+    .fn()
+    .mockResolvedValue('\nAvailable CLI tools: git (version control).'),
 }))
 
 import { processVoiceInput } from '../voice-middleware.js'

@@ -59,7 +59,7 @@ export async function processVoiceInput(
   // Build chatText by appending any decorations
   let chatText = keywords.processedText
   if (keywords.decorations.length > 0) {
-    chatText += '\n\n' + keywords.decorations.join('\n\n')
+    chatText += `\n\n${keywords.decorations.join('\n\n')}`
   }
 
   return {
