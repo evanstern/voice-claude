@@ -8,6 +8,7 @@ NODE_VERSION=22
 PNPM_VERSION=9.15.0
 DEFAULT_PIPER_MODEL=en_US-lessac-medium.onnx
 DEFAULT_PIPER_MODELS_DIR="${PROJECT_ROOT}/models/piper"
+PIPER_TTS_VERSION=1.4.2
 DEFAULT_PIPER_BASE_URL="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium"
 
 WITH_PIPER=false
@@ -131,7 +132,8 @@ download_piper_model() {
   models_dir=${PIPER_MODELS_DIR:-$DEFAULT_PIPER_MODELS_DIR}
   model_path="${models_dir}/${model_name}"
   metadata_path="${model_path}.json"
-  model_url="${DEFAULT_PIPER_BASE_URL}/${model_name}"
+  local base_url=${PIPER_MODEL_BASE_URL:-$DEFAULT_PIPER_BASE_URL}
+  model_url="${base_url}/${model_name}"
   metadata_url="${model_url}.json"
 
   mkdir -p "${models_dir}"
@@ -163,9 +165,9 @@ setup_piper() {
     python3 -m venv "${venv_dir}"
   fi
 
-  log 'Installing piper-tts into virtualenv'
+  log "Installing piper-tts==${PIPER_TTS_VERSION} into virtualenv"
   "${venv_dir}/bin/pip" install --upgrade pip
-  "${venv_dir}/bin/pip" install --upgrade piper-tts
+  "${venv_dir}/bin/pip" install "piper-tts==${PIPER_TTS_VERSION}"
 
   download_piper_model
 }

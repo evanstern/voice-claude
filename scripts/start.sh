@@ -101,10 +101,15 @@ main() {
 
     local piper_venv="${PROJECT_ROOT}/.venv/piper"
     require_file "${piper_venv}/bin/python3"
+    require_file "${piper_venv}/bin/piper"
     require_file "${PROJECT_ROOT}/docker/piper/server.py"
     require_file "${PIPER_MODEL}"
 
-    start_process PIPER_PID 'Piper TTS' "${PROJECT_ROOT}" env PIPER_PORT="${PIPER_PORT}" PIPER_MODEL="${PIPER_MODEL}" "${piper_venv}/bin/python3" "${PROJECT_ROOT}/docker/piper/server.py"
+    start_process PIPER_PID 'Piper TTS' "${PROJECT_ROOT}" env \
+      PIPER_PORT="${PIPER_PORT}" \
+      PIPER_MODEL="${PIPER_MODEL}" \
+      PIPER_BINARY="${piper_venv}/bin/piper" \
+      "${piper_venv}/bin/python3" "${PROJECT_ROOT}/docker/piper/server.py"
   fi
 
   start_process SERVER_PID 'server' "${PROJECT_ROOT}/apps/server" env NODE_ENV="${node_env}" PORT="${server_port}" BEHIND_PROXY="${behind_proxy}" PIPER_URL="${PIPER_URL:-}" TTS_PROVIDER="${TTS_PROVIDER:-}" SERVER_URL="${server_url}" node --import tsx dist/src/index.js
@@ -115,15 +120,23 @@ main() {
   local exit_code=$?
   set -e
 
-  shutdown SIGTERM
-
   if [[ ${SHUTDOWN_REQUESTED} == true ]]; then
+    shutdown SIGTERM
     return
   fi
 
-  if [[ ${exit_code} -ne 0 ]]; then
-    fail "A process exited unexpectedly with status ${exit_code}"
+  local exited_name="unknown"
+  if [[ -n "${SERVER_PID}" ]] && ! kill -0 "${SERVER_PID}" 2>/dev/null; then
+    exited_name="server"
+  elif [[ -n "${WEB_PID}" ]] && ! kill -0 "${WEB_PID}" 2>/dev/null; then
+    exited_name="web"
+  elif [[ -n "${PIPER_PID}" ]] && ! kill -0 "${PIPER_PID}" 2>/dev/null; then
+    exited_name="piper"
   fi
+
+  log "Process '${exited_name}' exited with status ${exit_code}"
+  shutdown SIGTERM
+  fail "Process '${exited_name}' exited unexpectedly (status ${exit_code})"
 }
 
 main "$@"
