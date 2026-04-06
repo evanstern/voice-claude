@@ -66,7 +66,7 @@ shutdown() {
   local pid
   for pid in "${WEB_PID}" "${SERVER_PID}" "${PIPER_PID}"; do
     if [[ -n "${pid}" ]] && kill -0 "${pid}" >/dev/null 2>&1; then
-      kill -TERM "${pid}" >/dev/null 2>&1 || true
+      kill -"${signal}" "${pid}" >/dev/null 2>&1 || true
     fi
   done
 
@@ -99,12 +99,12 @@ main() {
     export PIPER_MODELS_DIR=${PIPER_MODELS_DIR:-${PROJECT_ROOT}/models/piper}
     export PIPER_MODEL=${PIPER_MODEL:-${PIPER_MODELS_DIR}/${PIPER_MODEL_NAME}}
 
-    require_command python3
-    require_command piper
+    local piper_venv="${PROJECT_ROOT}/.venv/piper"
+    require_file "${piper_venv}/bin/python3"
     require_file "${PROJECT_ROOT}/docker/piper/server.py"
     require_file "${PIPER_MODEL}"
 
-    start_process PIPER_PID 'Piper TTS' "${PROJECT_ROOT}" env PIPER_PORT="${PIPER_PORT}" PIPER_MODEL="${PIPER_MODEL}" python3 "${PROJECT_ROOT}/docker/piper/server.py"
+    start_process PIPER_PID 'Piper TTS' "${PROJECT_ROOT}" env PIPER_PORT="${PIPER_PORT}" PIPER_MODEL="${PIPER_MODEL}" "${piper_venv}/bin/python3" "${PROJECT_ROOT}/docker/piper/server.py"
   fi
 
   start_process SERVER_PID 'server' "${PROJECT_ROOT}/apps/server" env NODE_ENV="${node_env}" PORT="${server_port}" BEHIND_PROXY="${behind_proxy}" PIPER_URL="${PIPER_URL:-}" TTS_PROVIDER="${TTS_PROVIDER:-}" SERVER_URL="${server_url}" node --import tsx dist/src/index.js

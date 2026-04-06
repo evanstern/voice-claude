@@ -143,21 +143,29 @@ download_piper_model() {
 
   if [[ ! -f "${model_path}" ]]; then
     log "Downloading Piper model: ${model_name}"
-    wget -q -O "${model_path}" "${model_url}"
+    wget -q -O "${model_path}.tmp" "${model_url}"
+    mv "${model_path}.tmp" "${model_path}"
   fi
 
   if [[ ! -f "${metadata_path}" ]]; then
     log "Downloading Piper model metadata: ${model_name}.json"
-    wget -q -O "${metadata_path}" "${metadata_url}"
+    wget -q -O "${metadata_path}.tmp" "${metadata_url}"
+    mv "${metadata_path}.tmp" "${metadata_path}"
   fi
 }
 
 setup_piper() {
-  install_apt_packages python3-pip
+  install_apt_packages python3-venv
 
-  log 'Installing piper-tts with pip'
-  python3 -m pip install --break-system-packages --upgrade pip
-  python3 -m pip install --break-system-packages --upgrade piper-tts
+  local venv_dir="${PROJECT_ROOT}/.venv/piper"
+  if [[ ! -d "${venv_dir}" ]]; then
+    log 'Creating Piper virtualenv'
+    python3 -m venv "${venv_dir}"
+  fi
+
+  log 'Installing piper-tts into virtualenv'
+  "${venv_dir}/bin/pip" install --upgrade pip
+  "${venv_dir}/bin/pip" install --upgrade piper-tts
 
   download_piper_model
 }
