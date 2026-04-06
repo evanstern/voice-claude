@@ -4,10 +4,14 @@ import type { AppRouter } from '@voice-claude/server/trpc/router'
 let _client: ReturnType<typeof createTRPCClient<AppRouter>> | null = null
 let _currentPort: number | null = null
 
-export function getClientTRPC(serverPort: number) {
+export function getClientTRPC(serverPort: number | null) {
   if (_client && _currentPort === serverPort) return _client
 
-  const url = `${window.location.protocol}//${window.location.hostname}:${serverPort}/trpc`
+  const host =
+    serverPort != null
+      ? `${window.location.hostname}:${serverPort}`
+      : window.location.host
+  const url = `${window.location.protocol}//${host}/trpc`
 
   _client = createTRPCClient<AppRouter>({
     links: [httpBatchLink({ url })],

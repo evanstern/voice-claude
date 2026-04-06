@@ -11,7 +11,7 @@ import { getClientTRPC } from '../trpc/client.js'
 
 interface RootContext {
   health: { status: string; timestamp: string } | null
-  wsConfig: { path: string; port: number } | null
+  wsConfig: { path: string; port: number | null } | null
 }
 
 interface ServiceCosts {

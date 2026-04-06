@@ -18,8 +18,11 @@ export const appRouter = createRouter({
   }),
   config: createRouter({
     wsUrl: publicProcedure.query(() => {
-      const port = process.env.PORT ?? '4000'
-      return { path: '/ws/audio', port: Number.parseInt(port, 10) }
+      const behindProxy = process.env.BEHIND_PROXY === 'true'
+      const port = behindProxy
+        ? null
+        : Number.parseInt(process.env.PORT ?? '4000', 10)
+      return { path: '/ws/audio', port }
     }),
   }),
   stats: publicProcedure.query(() => {
