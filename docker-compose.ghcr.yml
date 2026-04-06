@@ -10,7 +10,7 @@ services:
       NODE_ENV: production
       WORK_DIR: /workspace
       PIPER_URL: http://piper:5000
-      BEHIND_PROXY: "true"
+      BEHIND_PROXY: "${BEHIND_PROXY:-true}"
     volumes:
       - ${WORK_DIR:-./workspace}:/workspace
       - ${CONVERSATIONS_DIR:-./data/conversations}:/app/data/conversations
@@ -109,3 +109,4 @@ networks:
     driver: bridge
   traefik-network:
     external: true
+    name: ${TRAEFIK_NETWORK:-traefik-network}

@@ -7,9 +7,10 @@ let _currentPort: number | null = null
 export function getClientTRPC(serverPort: number | null) {
   if (_client && _currentPort === serverPort) return _client
 
-  const host = serverPort
-    ? `${window.location.hostname}:${serverPort}`
-    : window.location.host
+  const host =
+    serverPort != null
+      ? `${window.location.hostname}:${serverPort}`
+      : window.location.host
   const url = `${window.location.protocol}//${host}/trpc`
 
   _client = createTRPCClient<AppRouter>({

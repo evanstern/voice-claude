@@ -44,9 +44,10 @@ export default function Home() {
   const wsUrl = useMemo(() => {
     if (typeof window === 'undefined' || !wsConfig) return null
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = wsConfig.port
-      ? `${window.location.hostname}:${wsConfig.port}`
-      : window.location.host
+    const host =
+      wsConfig.port != null
+        ? `${window.location.hostname}:${wsConfig.port}`
+        : window.location.host
     return `${protocol}//${host}${wsConfig.path}`
   }, [wsConfig])
 

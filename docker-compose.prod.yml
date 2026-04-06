@@ -12,12 +12,13 @@ services:
       NODE_ENV: production
       WORK_DIR: /workspace
       PIPER_URL: http://piper:5000
-      BEHIND_PROXY: "true"
+      BEHIND_PROXY: "${BEHIND_PROXY:-true}"
+      # GOOGLE_TTS_CREDENTIALS_FILE: /secrets/google-credentials.json
     volumes:
       - ${WORK_DIR:-./workspace}:/workspace
       - ${CONVERSATIONS_DIR:-./data/conversations}:/app/data/conversations
       # Mount Google TTS credentials if using Google TTS provider.
-      # Uncomment and ensure the file exists on the host:
+      # Uncomment above env var and below volume mount:
       # - ./google-credentials.json:/secrets/google-credentials.json:ro
     restart: unless-stopped
     labels:
@@ -89,7 +90,7 @@ services:
     networks:
       - voice-claude
 
-  # Downloads the default Piper model on first run if not present
+  # Auto-downloads en_US-lessac-medium model only. Custom models must be placed manually.
   piper-init:
     image: alpine:3.20
     profiles:
@@ -121,3 +122,4 @@ networks:
     driver: bridge
   traefik-network:
     external: true
+    name: ${TRAEFIK_NETWORK:-traefik-network}
