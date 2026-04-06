@@ -1,8 +1,6 @@
 services:
   server:
-    build:
-      context: .
-      dockerfile: apps/server/Dockerfile
+    image: ghcr.io/evanstern/voice-claude/server:${IMAGE_TAG:-latest}
     expose:
       - "4000"
     env_file:
@@ -16,17 +14,12 @@ services:
     volumes:
       - ${WORK_DIR:-./workspace}:/workspace
       - ${CONVERSATIONS_DIR:-./data/conversations}:/app/data/conversations
-      # Mount Google TTS credentials if using Google TTS provider.
-      # Uncomment and ensure the file exists on the host:
-      # - ./google-credentials.json:/secrets/google-credentials.json:ro
     restart: unless-stopped
     labels:
       - traefik.enable=true
-      # WebSocket endpoint — must match before the catch-all web route
       - traefik.http.routers.voice-claude-ws.rule=Host(`${VOICE_CLAUDE_HOST:-voice.local.infinity-node.win}`) && PathPrefix(`/ws`)
       - traefik.http.routers.voice-claude-ws.entrypoints=web
       - traefik.http.routers.voice-claude-ws.service=voice-claude-server
-      # tRPC API — browser client hits /trpc directly when behind proxy
       - traefik.http.routers.voice-claude-api.rule=Host(`${VOICE_CLAUDE_HOST:-voice.local.infinity-node.win}`) && PathPrefix(`/trpc`)
       - traefik.http.routers.voice-claude-api.entrypoints=web
       - traefik.http.routers.voice-claude-api.service=voice-claude-server
@@ -39,9 +32,7 @@ services:
       - traefik-network
 
   web:
-    build:
-      context: .
-      dockerfile: apps/web/Dockerfile
+    image: ghcr.io/evanstern/voice-claude/web:${IMAGE_TAG:-latest}
     expose:
       - "3000"
     env_file:
@@ -64,10 +55,8 @@ services:
       - voice-claude
       - traefik-network
 
-  # Piper local TTS — only started with: docker compose --profile piper up
   piper:
-    build:
-      context: ./docker/piper
+    image: ghcr.io/evanstern/voice-claude/piper:${IMAGE_TAG:-latest}
     profiles:
       - piper
     env_file:
@@ -89,7 +78,6 @@ services:
     networks:
       - voice-claude
 
-  # Downloads the default Piper model on first run if not present
   piper-init:
     image: alpine:3.20
     profiles:

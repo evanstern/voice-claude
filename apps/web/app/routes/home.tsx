@@ -16,7 +16,7 @@ import { getClientTRPC } from '../trpc/client.js'
 
 interface RootContext {
   health: { status: string; timestamp: string } | null
-  wsConfig: { path: string; port: number } | null
+  wsConfig: { path: string; port: number | null } | null
 }
 
 interface ConversationEntry {
@@ -44,7 +44,10 @@ export default function Home() {
   const wsUrl = useMemo(() => {
     if (typeof window === 'undefined' || !wsConfig) return null
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    return `${protocol}//${window.location.hostname}:${wsConfig.port}${wsConfig.path}`
+    const host = wsConfig.port
+      ? `${window.location.hostname}:${wsConfig.port}`
+      : window.location.host
+    return `${protocol}//${host}${wsConfig.path}`
   }, [wsConfig])
 
   const trpc = useMemo(() => {
