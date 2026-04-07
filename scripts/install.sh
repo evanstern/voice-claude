@@ -166,8 +166,8 @@ ensure_config_file() {
 
   if [[ -z "${current_work_dir}" ]]; then
     log "Setting WORK_DIR=${INSTALL_HOME} in ${CONFIG_FILE}"
-    if grep -qE '^#?\s*WORK_DIR=' "${CONFIG_FILE}"; then
-      sed -i "s|^#\?\s*WORK_DIR=.*|WORK_DIR=${INSTALL_HOME}|" "${CONFIG_FILE}"
+    if grep -qE '^#?[[:space:]]*WORK_DIR=' "${CONFIG_FILE}"; then
+      sed -E -i "s|^#?[[:space:]]*WORK_DIR=.*|WORK_DIR=${INSTALL_HOME}|" "${CONFIG_FILE}"
     else
       printf '\nWORK_DIR=%s\n' "${INSTALL_HOME}" >> "${CONFIG_FILE}"
     fi
