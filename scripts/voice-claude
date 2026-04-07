@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# voice-claude CLI — lifecycle management for the voice-claude service.
+# Installed to /usr/local/bin/voice-claude by install.sh.
+
+SERVICE_NAME=voice-claude
+SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+
+# PROJECT_ROOT is baked in by install.sh (replaced at install time).
+# Fallback: derive from script location if running from the repo directly.
+PROJECT_ROOT="__PROJECT_ROOT__"
+if [[ "${PROJECT_ROOT}" == "__PROJECT_ROOT__" ]]; then
+  SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+  PROJECT_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd)
+fi
+
+ENV_FILE="${PROJECT_ROOT}/.env"
+
+if [[ ${EUID} -eq 0 ]]; then
+  SUDO=()
+elif command -v sudo >/dev/null 2>&1; then
+  SUDO=(sudo)
+else
+  printf 'This command needs root privileges. Run as root or install sudo.\n' >&2
+  exit 1
+fi
+
+log() { printf '[voice-claude] %s\n' "$*"; }
+fail() { printf '[voice-claude] ERROR: %s\n' "$*" >&2; exit 1; }
+
+require_service() {
+  if [[ ! -f "${SERVICE_FILE}" ]]; then
+    fail "Service not installed. Run ./scripts/install.sh first."
+  fi
+}
+
+cmd_start() {
+  require_service
+  log "Starting ${SERVICE_NAME}"
+  "${SUDO[@]}" systemctl start "${SERVICE_NAME}"
+  "${SUDO[@]}" systemctl status "${SERVICE_NAME}" --no-pager
+}
+
+cmd_stop() {
+  require_service
+  log "Stopping ${SERVICE_NAME}"
+  "${SUDO[@]}" systemctl stop "${SERVICE_NAME}"
+  log "Stopped"
+}
+
+cmd_restart() {
+  require_service
+  log "Restarting ${SERVICE_NAME}"
+  "${SUDO[@]}" systemctl restart "${SERVICE_NAME}"
+  "${SUDO[@]}" systemctl status "${SERVICE_NAME}" --no-pager
+}
+
+cmd_status() {
+  require_service
+  "${SUDO[@]}" systemctl status "${SERVICE_NAME}" --no-pager || true
+}
+
+cmd_logs() {
+  require_service
+  local follow=false
+  local lines=50
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -f|--follow) follow=true ;;
+      -n|--lines) shift; lines="$1" ;;
+      *) ;;
+    esac
+    shift
+  done
+
+  if [[ ${follow} == true ]]; then
+    "${SUDO[@]}" journalctl -u "${SERVICE_NAME}" -f -n "${lines}"
+  else
+    "${SUDO[@]}" journalctl -u "${SERVICE_NAME}" -n "${lines}" --no-pager
+  fi
+}
+
+cmd_update() {
+  require_service
+  cd "${PROJECT_ROOT}"
+
+  log "Pulling latest changes"
+  git pull --ff-only || fail "git pull failed. Resolve manually."
+
+  if [[ -f "${ENV_FILE}" ]]; then
+    set -a; source "${ENV_FILE}"; set +a
+  fi
+
+  log "Installing dependencies"
+  pnpm install
+
+  log "Building"
+  pnpm build
+
+  log "Restarting service"
+  "${SUDO[@]}" systemctl restart "${SERVICE_NAME}"
+  "${SUDO[@]}" systemctl status "${SERVICE_NAME}" --no-pager
+
+  log "Update complete"
+}
+
+cmd_uninstall() {
+  log "Stopping and disabling ${SERVICE_NAME} service"
+  "${SUDO[@]}" systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
+  "${SUDO[@]}" systemctl disable "${SERVICE_NAME}" 2>/dev/null || true
+
+  if [[ -f "${SERVICE_FILE}" ]]; then
+    "${SUDO[@]}" rm -f "${SERVICE_FILE}"
+    "${SUDO[@]}" systemctl daemon-reload
+    log "Removed ${SERVICE_FILE}"
+  fi
+
+  if [[ -L /usr/local/bin/voice-claude ]]; then
+    "${SUDO[@]}" rm -f /usr/local/bin/voice-claude
+    log "Removed /usr/local/bin/voice-claude"
+  fi
+
+  log "Uninstalled. Project files in ${PROJECT_ROOT} were not removed."
+}
+
+usage() {
+  cat <<EOF
+Usage: voice-claude <command> [options]
+
+Commands:
+  start       Start the voice-claude service
+  stop        Stop the voice-claude service
+  restart     Restart the voice-claude service
+  status      Show service status
+  logs        Show service logs (use -f to follow, -n <lines> for count)
+  update      Pull latest code, rebuild, and restart
+  uninstall   Remove the systemd service and CLI symlink
+
+EOF
+}
+
+case "${1:-}" in
+  start)     shift; cmd_start "$@" ;;
+  stop)      shift; cmd_stop "$@" ;;
+  restart)   shift; cmd_restart "$@" ;;
+  status)    shift; cmd_status "$@" ;;
+  logs)      shift; cmd_logs "$@" ;;
+  update)    shift; cmd_update "$@" ;;
+  uninstall) shift; cmd_uninstall "$@" ;;
+  -h|--help|help|"") usage ;;
+  *) printf 'Unknown command: %s\n\n' "$1" >&2; usage; exit 1 ;;
+esac
