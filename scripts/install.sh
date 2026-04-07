@@ -28,6 +28,11 @@ if [[ "${INSTALL_PIPER:-false}" == "true" ]]; then
   WITH_PIPER=true
 fi
 
+WITH_CLOUDFLARE_TUNNEL=prompt
+if [[ "${INSTALL_CLOUDFLARE_TUNNEL:-false}" == "true" ]]; then
+  WITH_CLOUDFLARE_TUNNEL=true
+fi
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --with-piper)
@@ -35,6 +40,12 @@ while [[ $# -gt 0 ]]; do
       ;;
     --without-piper)
       WITH_PIPER=false
+      ;;
+    --with-cloudflare-tunnel)
+      WITH_CLOUDFLARE_TUNNEL=true
+      ;;
+    --without-cloudflare-tunnel)
+      WITH_CLOUDFLARE_TUNNEL=false
       ;;
     *)
       printf 'Unknown argument: %s\n' "$1" >&2
@@ -215,6 +226,83 @@ setup_piper() {
   download_piper_model
 }
 
+setup_cloudflare_tunnel() {
+  log 'Cloudflare Tunnel setup'
+
+  if ! command -v cloudflared >/dev/null 2>&1; then
+    log 'Installing cloudflared'
+    install_apt_packages curl gnupg
+    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | "${SUDO[@]}" gpg --yes --dearmor -o /usr/share/keyrings/cloudflare-main.gpg
+    printf 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main\n' | "${SUDO[@]}" tee /etc/apt/sources.list.d/cloudflared.list >/dev/null
+    "${SUDO[@]}" apt-get update -qq
+    "${SUDO[@]}" apt-get install -y cloudflared
+  fi
+
+  log 'Authenticating with Cloudflare (a browser URL will be printed — open it to authorise)'
+  "${SUDO[@]}" cloudflared tunnel login
+
+  printf '[install] Enter the hostname to expose (e.g. voice.example.com): '
+  read -r CF_HOSTNAME
+
+  log "Creating tunnel 'voice-claude'"
+  local tunnel_output
+  tunnel_output=$("${SUDO[@]}" cloudflared tunnel create voice-claude 2>&1)
+  printf '%s\n' "${tunnel_output}"
+  local tunnel_id
+  tunnel_id=$(printf '%s' "${tunnel_output}" | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)
+
+  if [[ -z "${tunnel_id}" ]]; then
+    fail 'Could not determine tunnel ID. Check output above.'
+  fi
+
+  log "Routing DNS: ${CF_HOSTNAME} → tunnel ${tunnel_id}"
+  "${SUDO[@]}" cloudflared tunnel route dns voice-claude "${CF_HOSTNAME}"
+
+  "${SUDO[@]}" mkdir -p /etc/cloudflared
+  "${SUDO[@]}" tee /etc/cloudflared/config.yml >/dev/null <<EOF
+tunnel: ${tunnel_id}
+credentials-file: /root/.cloudflared/${tunnel_id}.json
+
+ingress:
+  - hostname: ${CF_HOSTNAME}
+    service: http://localhost:80
+    originRequest:
+      noTLSVerify: true
+  - service: http_status:404
+EOF
+
+  "${SUDO[@]}" cloudflared service install
+  "${SUDO[@]}" systemctl start cloudflared
+  "${SUDO[@]}" systemctl enable cloudflared
+
+  log "Cloudflare Tunnel running. Access via: https://${CF_HOSTNAME}"
+  log "NOTE: Add a Traefik (or reverse proxy) route for ${CF_HOSTNAME} on port 80 to complete setup."
+}
+
+prompt_cloudflare_tunnel() {
+  if [[ ! -t 0 ]]; then
+    log 'Non-interactive mode: skipping Cloudflare Tunnel setup (re-run with --with-cloudflare-tunnel to enable)'
+    return
+  fi
+
+  printf '\n[install] Would you like to set up a Cloudflare Tunnel for public HTTPS access?\n'
+  printf '[install] This enables access via a public domain (e.g. voice.example.com) without port forwarding.\n'
+  printf '[install] Requires a Cloudflare-managed domain.\n'
+  printf '[install] If you skip this, the install will be cancelled.\n'
+  printf '[install] Set up Cloudflare Tunnel? [y/N] '
+  read -r answer
+
+  case "${answer}" in
+    [yY]|[yY][eE][sS])
+      setup_cloudflare_tunnel
+      ;;
+    *)
+      log 'Cloudflare Tunnel setup declined. Cancelling install.'
+      exit 0
+      ;;
+  esac
+}
+
 ensure_claude_code() {
   local ai_provider
   ai_provider=$(grep -E '^AI_PROVIDER=' "${CONFIG_FILE}" | cut -d= -f2- || true)
@@ -261,7 +349,7 @@ Environment=VOICE_CLAUDE_CONFIG=${CONFIG_FILE}
 WorkingDirectory=${PROJECT_ROOT}
 ExecStart=${PROJECT_ROOT}/scripts/start.sh
 EnvironmentFile=${CONFIG_FILE}
-Restart=on-failure
+Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
@@ -315,6 +403,15 @@ main() {
   fi
 
   ensure_claude_code
+
+  if [[ "${WITH_CLOUDFLARE_TUNNEL}" == "true" ]]; then
+    setup_cloudflare_tunnel
+  elif [[ "${WITH_CLOUDFLARE_TUNNEL}" == "prompt" ]]; then
+    prompt_cloudflare_tunnel
+  else
+    log 'Skipping Cloudflare Tunnel setup'
+  fi
+
   setup_systemd_service
   install_cli
 

@@ -7,13 +7,7 @@ set -euo pipefail
 SERVICE_NAME=voice-claude
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 
-# PROJECT_ROOT is baked in by install.sh (replaced at install time).
-# Fallback: derive from script location if running from the repo directly.
 PROJECT_ROOT="__PROJECT_ROOT__"
-if [[ "${PROJECT_ROOT}" == "__PROJECT_ROOT__" ]]; then
-  SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-  PROJECT_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd)
-fi
 
 CONFIG_FILE="__CONFIG_FILE__"
 if [[ "${CONFIG_FILE}" == "__CONFIG_FILE__" ]]; then
@@ -91,17 +85,19 @@ cmd_update() {
   cd "${PROJECT_ROOT}"
 
   log "Pulling latest changes"
-  git pull --ff-only || fail "git pull failed. Resolve manually."
+  local git=(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git -C "${PROJECT_ROOT}")
+  "${git[@]}" fetch origin main || fail "git fetch failed. Check network and try again."
+  "${git[@]}" reset --hard origin/main || fail "git reset failed. Resolve manually."
 
   if [[ -f "${ENV_FILE}" ]]; then
     set -a; source "${ENV_FILE}"; set +a
   fi
 
   log "Installing dependencies"
-  pnpm install
+  (cd "${PROJECT_ROOT}" && pnpm install)
 
   log "Building"
-  pnpm build
+  (cd "${PROJECT_ROOT}" && pnpm build)
 
   log "Restarting service"
   "${SUDO[@]}" systemctl restart "${SERVICE_NAME}"
