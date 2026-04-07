@@ -51,6 +51,7 @@ export type SetConversationMessage = z.infer<typeof setConversationMessage>
 
 export const controlMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('stop') }),
+  z.object({ type: z.literal('detect_wake') }),
   z.object({ type: z.literal('cancel') }),
   z.object({ type: z.literal('ping') }),
 ])
@@ -137,6 +138,21 @@ export const commandMessage = z.object({
 
 export type CommandMessage = z.infer<typeof commandMessage>
 
+export const errorMessage = z.object({
+  type: z.literal('error'),
+  error: z.string(),
+})
+
+export type ErrorMessage = z.infer<typeof errorMessage>
+
+export const wakeDetectionMessage = z.object({
+  type: z.literal('wake_detection'),
+  detected: z.boolean(),
+  text: z.string().optional(),
+})
+
+export type WakeDetectionMessage = z.infer<typeof wakeDetectionMessage>
+
 export const serverWsMessage = z.discriminatedUnion('type', [
   audioAckMessage,
   transcribingMessage,
@@ -148,6 +164,8 @@ export const serverWsMessage = z.discriminatedUnion('type', [
   ttsAudioMessage,
   ttsErrorMessage,
   commandMessage,
+  errorMessage,
+  wakeDetectionMessage,
 ])
 
 export type ServerWsMessage = z.infer<typeof serverWsMessage>

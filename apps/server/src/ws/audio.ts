@@ -25,6 +25,7 @@ import { getSTTProvider, transcribe } from '../voice/stt.js'
 import { filterForTTS } from '../voice/text-filter.js'
 import { getTTSProvider } from '../voice/tts.js'
 import { processVoiceInput } from '../voice/voice-middleware.js'
+import { detectWakePhrase } from '../voice/wake-phrase.js'
 
 const log = logger.child({ module: 'ws' })
 
@@ -87,6 +88,13 @@ export function attachWebSocket(httpServer: Server) {
 
     log.info({ client, session: sessionId.slice(0, 8) }, 'connected')
 
+    const resetBufferedAudio = () => {
+      audioChunks = []
+      chunkCount = 0
+      totalBytes = 0
+      streamStartedAt = null
+    }
+
     ws.on('message', async (data, isBinary) => {
       if (!isBinary) {
         let raw: unknown
@@ -146,9 +154,7 @@ export function attachWebSocket(httpServer: Server) {
 
         handleControl(ws, sessionId, msg, () => ({
           audioChunks,
-          resetAudio: () => {
-            audioChunks = []
-          },
+          resetAudio: resetBufferedAudio,
           conversationId,
           isFirstMessage,
           setFirstMessage: (val: boolean) => {
@@ -182,9 +188,7 @@ export function attachWebSocket(httpServer: Server) {
           { maxBytes: MAX_AUDIO_BUFFER_BYTES },
           'audio buffer exceeded limit, clearing',
         )
-        audioChunks = []
-        totalBytes = 0
-        chunkCount = 0
+        resetBufferedAudio()
         send(ws, {
           type: 'error',
           error: 'Audio buffer exceeded 10 MB limit. Recording cleared.',
@@ -227,6 +231,9 @@ export function attachWebSocket(httpServer: Server) {
 
       // Clean up server-side state for this session
       audioChunks = []
+      chunkCount = 0
+      totalBytes = 0
+      streamStartedAt = null
       clearSession(sessionId)
       cleanupSession(sessionId)
     })
@@ -463,6 +470,49 @@ async function handleControl(
         finalizeInteraction(sessionId)
       }
       clearAbort()
+      break
+    }
+
+    case 'detect_wake': {
+      const { audioChunks, resetAudio } = getAudioState()
+
+      if (audioChunks.length === 0) {
+        send(ws, { type: 'wake_detection', detected: false, text: '' })
+        break
+      }
+
+      let combined: Buffer
+      try {
+        combined = Buffer.concat(audioChunks)
+      } finally {
+        resetAudio()
+      }
+
+      let transcript = ''
+      try {
+        const result = await transcribe(combined)
+        transcript = result.text
+        const sttProvider = getSTTProvider()
+        recordSTT(sessionId, result.durationSec, sttProvider.name, 'whisper-1')
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error'
+        log.error({ err: message }, 'wake detection STT error')
+        send(ws, { type: 'wake_detection', detected: false, text: '' })
+        break
+      }
+
+      const wake = detectWakePhrase(transcript)
+
+      log.debug(
+        { detected: wake.detected, transcript: wake.transcript },
+        'wake phrase check complete',
+      )
+
+      send(ws, {
+        type: 'wake_detection',
+        detected: wake.detected,
+        text: wake.transcript,
+      })
       break
     }
   }
