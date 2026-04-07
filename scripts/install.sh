@@ -11,6 +11,18 @@ DEFAULT_PIPER_MODELS_DIR="${PROJECT_ROOT}/models/piper"
 PIPER_TTS_VERSION=1.4.2
 DEFAULT_PIPER_BASE_URL="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium"
 
+if [[ ${EUID} -eq 0 && -n "${SUDO_USER:-}" ]]; then
+  INSTALL_USER=${SUDO_USER}
+else
+  INSTALL_USER=$(id -un)
+fi
+
+INSTALL_GROUP=$(id -gn "${INSTALL_USER}")
+INSTALL_HOME=$(getent passwd "${INSTALL_USER}" | cut -d: -f6 || true)
+CONFIG_HOME=${INSTALL_HOME}/.config
+CONFIG_DIR="${CONFIG_HOME}/voice-claude"
+CONFIG_FILE="${CONFIG_DIR}/config.env"
+
 WITH_PIPER=false
 if [[ "${INSTALL_PIPER:-false}" == "true" ]]; then
   WITH_PIPER=true
@@ -60,6 +72,10 @@ fail() {
   printf '[install] ERROR: %s\n' "$*" >&2
   exit 1
 }
+
+if [[ -z "${INSTALL_HOME}" ]]; then
+  fail "Could not determine home directory for install user '${INSTALL_USER}'."
+fi
 
 require_apt() {
   if ! command -v apt-get >/dev/null 2>&1; then
@@ -122,28 +138,45 @@ ensure_pnpm() {
   "${SUDO[@]}" corepack prepare "pnpm@${PNPM_VERSION}" --activate
 }
 
-ensure_env_file() {
-  if [[ ! -f "${PROJECT_ROOT}/.env" ]]; then
-    log 'Creating .env from .env.example'
-    cp "${PROJECT_ROOT}/.env.example" "${PROJECT_ROOT}/.env"
+write_config_file() {
+  local source_file=$1
+
+  if [[ ${EUID} -eq 0 ]]; then
+    install -d -m 0755 -o "${INSTALL_USER}" -g "${INSTALL_GROUP}" "${CONFIG_DIR}"
+    install -m 0600 -o "${INSTALL_USER}" -g "${INSTALL_GROUP}" "${source_file}" "${CONFIG_FILE}"
+  else
+    mkdir -p "${CONFIG_DIR}"
+    install -m 0600 "${source_file}" "${CONFIG_FILE}"
+  fi
+}
+
+ensure_config_file() {
+  if [[ -f "${CONFIG_FILE}" ]]; then
+    :
+  elif [[ -f "${PROJECT_ROOT}/.env" ]]; then
+    log "Migrating existing repo config to ${CONFIG_FILE}"
+    write_config_file "${PROJECT_ROOT}/.env"
+  else
+    log "Creating installed config at ${CONFIG_FILE} from .env.example"
+    write_config_file "${PROJECT_ROOT}/.env.example"
   fi
 
   local current_work_dir
-  current_work_dir=$(grep -E '^WORK_DIR=' "${PROJECT_ROOT}/.env" | cut -d= -f2- || true)
+  current_work_dir=$(grep -E '^WORK_DIR=' "${CONFIG_FILE}" | cut -d= -f2- || true)
 
   if [[ -z "${current_work_dir}" ]]; then
-    log "Setting WORK_DIR=${HOME} in .env"
-    if grep -qE '^#?\s*WORK_DIR=' "${PROJECT_ROOT}/.env"; then
-      sed -i "s|^#\?\s*WORK_DIR=.*|WORK_DIR=${HOME}|" "${PROJECT_ROOT}/.env"
+    log "Setting WORK_DIR=${INSTALL_HOME} in ${CONFIG_FILE}"
+    if grep -qE '^#?\s*WORK_DIR=' "${CONFIG_FILE}"; then
+      sed -i "s|^#\?\s*WORK_DIR=.*|WORK_DIR=${INSTALL_HOME}|" "${CONFIG_FILE}"
     else
-      printf '\nWORK_DIR=%s\n' "${HOME}" >> "${PROJECT_ROOT}/.env"
+      printf '\nWORK_DIR=%s\n' "${INSTALL_HOME}" >> "${CONFIG_FILE}"
     fi
   fi
 }
 
 load_env() {
   set -a
-  source "${PROJECT_ROOT}/.env"
+  source "${CONFIG_FILE}"
   set +a
 }
 
@@ -272,7 +305,7 @@ prompt_cloudflare_tunnel() {
 
 ensure_claude_code() {
   local ai_provider
-  ai_provider=$(grep -E '^AI_PROVIDER=' "${PROJECT_ROOT}/.env" | cut -d= -f2- || true)
+  ai_provider=$(grep -E '^AI_PROVIDER=' "${CONFIG_FILE}" | cut -d= -f2- || true)
 
   if [[ "${ai_provider}" != "claude-code" ]]; then
     return
@@ -297,8 +330,9 @@ ensure_claude_code() {
 
 setup_systemd_service() {
   local service_file="/etc/systemd/system/voice-claude.service"
-  local run_user
-  run_user=$(whoami)
+  local run_user run_user_home
+  run_user=${INSTALL_USER}
+  run_user_home=${INSTALL_HOME}
 
   log "Setting up systemd service (user=${run_user})"
 
@@ -310,10 +344,11 @@ After=network.target
 [Service]
 Type=simple
 User=${run_user}
-Environment=PATH=/home/${run_user}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PATH=${run_user_home}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=VOICE_CLAUDE_CONFIG=${CONFIG_FILE}
 WorkingDirectory=${PROJECT_ROOT}
 ExecStart=${PROJECT_ROOT}/scripts/start.sh
-EnvironmentFile=${PROJECT_ROOT}/.env
+EnvironmentFile=${CONFIG_FILE}
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -339,9 +374,11 @@ install_cli() {
   # Bake in the project root so the CLI works from anywhere
   "${SUDO[@]}" cp "${cli_src}" "${cli_dest}"
   "${SUDO[@]}" sed -i "s|__PROJECT_ROOT__|${PROJECT_ROOT}|g" "${cli_dest}"
+  "${SUDO[@]}" sed -i "s|__CONFIG_FILE__|${CONFIG_FILE}|g" "${cli_dest}"
   "${SUDO[@]}" chmod +x "${cli_dest}"
 
   log "Installed CLI to ${cli_dest}"
+  log "Installed config lives at ${CONFIG_FILE}"
 }
 
 main() {
@@ -350,7 +387,7 @@ main() {
   ensure_node
   install_apt_packages git curl jq less make python3 ripgrep tree wget
   ensure_pnpm
-  ensure_env_file
+  ensure_config_file
   load_env
 
   log 'Installing pnpm dependencies'

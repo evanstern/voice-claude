@@ -79,6 +79,7 @@ export function MicButton({
   onToggleMode,
 }: MicButtonProps) {
   const isRecording = phase === 'recording'
+  const isPassiveListening = phase === 'passive-listening'
   const isAuto = mode === 'auto'
   const hints = PHASE_HINTS[mode] ?? PHASE_HINTS['push-to-talk'] ?? {}
 
@@ -109,7 +110,10 @@ export function MicButton({
               ? 'bg-red-500/20 border-2 border-red-500 text-red-400 hover:bg-red-500/30'
               : busy
                 ? 'bg-orange-500/10 border-2 border-orange-500/40 text-orange-400 hover:bg-orange-500/20 active:scale-95'
-                : isAuto && (phase === 'idle' || phase === 'done')
+                : isAuto &&
+                    (phase === 'idle' ||
+                      phase === 'done' ||
+                      phase === 'passive-listening')
                   ? 'bg-green-500/10 border-2 border-green-500/40 text-green-400 hover:bg-green-500/20'
                   : 'bg-primary/10 border-2 border-primary/40 text-primary hover:bg-primary/20 hover:border-primary/60 active:scale-95'
           }`}
@@ -119,6 +123,9 @@ export function MicButton({
           )}
           {isAuto && !isRecording && !busy && (
             <span className="absolute inset-0 rounded-full animate-pulse bg-green-500/5" />
+          )}
+          {isPassiveListening && (
+            <span className="absolute inset-0 rounded-full animate-ping bg-green-500/10" />
           )}
           {busy && (
             <span className="absolute inset-0 rounded-full animate-pulse bg-orange-500/10" />

@@ -20,9 +20,11 @@ fail() {
 }
 
 load_env() {
-  if [[ -f "${PROJECT_ROOT}/.env" ]]; then
+  local env_file=${VOICE_CLAUDE_CONFIG:-${PROJECT_ROOT}/.env}
+
+  if [[ -f "${env_file}" ]]; then
     set -a
-    source "${PROJECT_ROOT}/.env"
+    source "${env_file}"
     set +a
   fi
 }
