@@ -107,17 +107,27 @@ ensure_pnpm() {
     fail 'corepack is required after installing Node.js, but was not found.'
   fi
 
-  corepack enable
-  corepack prepare "pnpm@${PNPM_VERSION}" --activate
+  "${SUDO[@]}" corepack enable
+  "${SUDO[@]}" corepack prepare "pnpm@${PNPM_VERSION}" --activate
 }
 
 ensure_env_file() {
-  if [[ -f "${PROJECT_ROOT}/.env" ]]; then
-    return
+  if [[ ! -f "${PROJECT_ROOT}/.env" ]]; then
+    log 'Creating .env from .env.example'
+    cp "${PROJECT_ROOT}/.env.example" "${PROJECT_ROOT}/.env"
   fi
 
-  log 'Creating .env from .env.example'
-  cp "${PROJECT_ROOT}/.env.example" "${PROJECT_ROOT}/.env"
+  local current_work_dir
+  current_work_dir=$(grep -E '^WORK_DIR=' "${PROJECT_ROOT}/.env" | cut -d= -f2- || true)
+
+  if [[ -z "${current_work_dir}" ]]; then
+    log "Setting WORK_DIR=${HOME} in .env"
+    if grep -qE '^#?\s*WORK_DIR=' "${PROJECT_ROOT}/.env"; then
+      sed -i "s|^#\?\s*WORK_DIR=.*|WORK_DIR=${HOME}|" "${PROJECT_ROOT}/.env"
+    else
+      printf '\nWORK_DIR=%s\n' "${HOME}" >> "${PROJECT_ROOT}/.env"
+    fi
+  fi
 }
 
 load_env() {
@@ -172,6 +182,80 @@ setup_piper() {
   download_piper_model
 }
 
+ensure_claude_code() {
+  local ai_provider
+  ai_provider=$(grep -E '^AI_PROVIDER=' "${PROJECT_ROOT}/.env" | cut -d= -f2- || true)
+
+  if [[ "${ai_provider}" != "claude-code" ]]; then
+    return
+  fi
+
+  if command -v claude >/dev/null 2>&1; then
+    log "Claude Code CLI already installed: $(claude --version 2>&1 | head -1)"
+    return
+  fi
+
+  log 'Installing Claude Code CLI (npm install -g @anthropic-ai/claude-code)'
+  "${SUDO[@]}" npm install -g @anthropic-ai/claude-code
+
+  if ! command -v claude >/dev/null 2>&1; then
+    fail 'Claude Code CLI installed but not found in PATH. Try running: sudo npm install -g @anthropic-ai/claude-code'
+  fi
+
+  log "Claude Code CLI installed: $(claude --version 2>&1 | head -1)"
+  log 'NOTE: You must authenticate the CLI before voice-claude can use it.'
+  log '      Run: claude login'
+}
+
+setup_systemd_service() {
+  local service_file="/etc/systemd/system/voice-claude.service"
+  local run_user
+  run_user=$(whoami)
+
+  log "Setting up systemd service (user=${run_user})"
+
+  "${SUDO[@]}" tee "${service_file}" >/dev/null <<EOF
+[Unit]
+Description=voice-claude — hands-free voice interface for Claude
+After=network.target
+
+[Service]
+Type=simple
+User=${run_user}
+Environment=PATH=/home/${run_user}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+WorkingDirectory=${PROJECT_ROOT}
+ExecStart=${PROJECT_ROOT}/scripts/start.sh
+EnvironmentFile=${PROJECT_ROOT}/.env
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  "${SUDO[@]}" systemctl daemon-reload
+  "${SUDO[@]}" systemctl enable voice-claude
+  "${SUDO[@]}" systemctl restart voice-claude
+}
+
+install_cli() {
+  local cli_src="${SCRIPT_DIR}/voice-claude"
+  local cli_dest="/usr/local/bin/voice-claude"
+
+  if [[ ! -f "${cli_src}" ]]; then
+    fail "CLI script not found at ${cli_src}"
+  fi
+
+  # Bake in the project root so the CLI works from anywhere
+  "${SUDO[@]}" cp "${cli_src}" "${cli_dest}"
+  "${SUDO[@]}" sed -i "s|__PROJECT_ROOT__|${PROJECT_ROOT}|g" "${cli_dest}"
+  "${SUDO[@]}" chmod +x "${cli_dest}"
+
+  log "Installed CLI to ${cli_dest}"
+}
+
 main() {
   cd "${PROJECT_ROOT}"
 
@@ -193,7 +277,13 @@ main() {
     log 'Skipping Piper setup'
   fi
 
+  ensure_claude_code
+  setup_systemd_service
+  install_cli
+
   log 'Install complete'
+  log 'The voice-claude service is now running.'
+  log 'Use "voice-claude status" to check, "voice-claude logs -f" to follow logs.'
 }
 
 main "$@"

@@ -1,0 +1,212 @@
+# voice-claude
+
+A hands-free voice interface for Claude. Talk to Claude through Bluetooth earbuds on your phone while your hands are busy, and have Claude working on code, managing repos, and talking back.
+
+```
+Earbuds Mic → Speech-to-Text → Claude API (with tool use) → Text-to-Speech → Earbuds Speaker
+```
+
+## Prerequisites
+
+- **Node.js 22+** (the install script will set this up for you on Debian/Ubuntu)
+- **pnpm 9.15+** (installed automatically via corepack)
+- **API keys**: Anthropic (required), OpenAI (required for default STT/TTS)
+- **Docker** (only if using Docker-based deployment)
+
+## Quick Start (Bare Metal)
+
+```bash
+git clone https://github.com/evanstern/voice-claude.git
+cd voice-claude
+
+# Edit .env with your API keys before installing
+cp .env.example .env
+vim .env
+
+# Install everything and start the service
+./scripts/install.sh
+```
+
+The install script sets up Node.js, builds the project, installs a systemd service, and starts it automatically. The web app will be at `http://localhost:3000` and the API server at `http://localhost:4000`.
+
+After installation, manage the service with:
+
+```bash
+voice-claude status            # check if running
+voice-claude logs -f           # follow logs
+voice-claude restart           # restart after .env changes
+voice-claude stop              # stop the service
+voice-claude start             # start it back up
+voice-claude update            # git pull, rebuild, restart
+voice-claude uninstall         # remove service and CLI
+```
+
+## Configuration
+
+The install script creates a `.env` file from `.env.example`. At minimum, you need to set:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-...   # Required - Claude API access
+OPENAI_API_KEY=sk-...          # Required for default Whisper STT and OpenAI TTS
+```
+
+### All Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `4000` | API server port |
+| `WEB_PORT` | `3000` | Web app port |
+| `SERVER_URL` | `http://localhost:4000` | Internal URL the web app uses to reach the server |
+| `LOG_LEVEL` | `debug` (dev) / `info` (prod) | Logging verbosity: `debug`, `info`, `warn`, `error` |
+| `ANTHROPIC_API_KEY` | -- | **Required.** Anthropic API key for Claude |
+| `OPENAI_API_KEY` | -- | **Required** (when using OpenAI STT/TTS) |
+| `AI_PROVIDER` | `anthropic` | `anthropic` (direct API) or `claude-code` (Claude Code CLI) |
+| `CLAUDE_MODEL` | `auto` | Model routing: `auto`, `sonnet`, or `haiku` |
+| `STT_PROVIDER` | `openai` | Speech-to-text: `openai` or `local` |
+| `TTS_PROVIDER` | `openai` | Text-to-speech: `openai`, `google`, or `piper` |
+| `TTS_VOICE` | `nova` | OpenAI TTS voice name |
+| `WORK_DIR` | `./workspace` | Host directory mounted for Claude tool execution |
+| `BEHIND_PROXY` | `false` | Set `true` when behind a reverse proxy (Traefik, nginx) |
+| `CONVERSATIONS_DIR` | `./data/conversations` | Where conversation history is stored (production Docker) |
+
+### TTS Provider Options
+
+**OpenAI TTS** (default) -- Uses the OpenAI API. Set `TTS_VOICE` to change the voice (default: `nova`).
+
+**Google Cloud TTS** -- Set `TTS_PROVIDER=google` and configure:
+```bash
+GOOGLE_TTS_CREDENTIALS_FILE=/path/to/google-credentials.json
+GOOGLE_TTS_VOICE=en-US-Standard-C
+GOOGLE_TTS_SPEAKING_RATE=1.0
+```
+
+**Piper TTS** (local, no API key needed) -- Set `TTS_PROVIDER=piper`. See [Piper Setup](#piper-local-tts) below.
+
+### STT Provider Options
+
+**OpenAI Whisper** (default) -- Uses the OpenAI Whisper API. Requires `OPENAI_API_KEY`.
+
+**Local Whisper** -- Set `STT_PROVIDER=local` and configure:
+```bash
+WHISPER_MODEL_PATH=/models/ggml-base.en.bin
+WHISPER_BINARY=whisper-cpp  # path to whisper-cpp binary
+```
+
+## Installation Methods
+
+### 1. Bare Metal (install script)
+
+The install script handles everything on Debian/Ubuntu:
+
+```bash
+./scripts/install.sh
+```
+
+What it does:
+- Installs Node.js 22 from NodeSource (if not present or outdated)
+- Installs system packages (`git`, `curl`, `jq`, `python3`, `ripgrep`, etc.)
+- Enables pnpm via corepack
+- Creates `.env` from `.env.example` (if `.env` doesn't exist)
+- Runs `pnpm install` and `pnpm build`
+- Creates a systemd service (`voice-claude.service`) that auto-starts on boot
+- Installs the `voice-claude` CLI to `/usr/local/bin/`
+- Starts the service
+
+To update after a `git pull` (or let the CLI do it for you):
+```bash
+voice-claude update
+```
+
+### 2. Docker (Development)
+
+```bash
+cp .env.example .env
+# Edit .env with your API keys
+docker compose up
+```
+
+This mounts the source tree into the containers for hot-reloading.
+
+### 3. Docker (Production -- Build Locally)
+
+```bash
+cp .env.example .env
+# Edit .env with your API keys
+docker compose -f docker-compose.prod.yml up --build -d
+```
+
+Builds multi-stage production images. Includes Traefik labels for reverse proxy routing -- set `VOICE_CLAUDE_HOST` to your domain.
+
+### 4. Docker (Production -- Pre-built Images)
+
+```bash
+cp .env.example .env
+# Edit .env with your API keys
+docker compose -f docker-compose.ghcr.yml up -d
+```
+
+Pulls pre-built images from `ghcr.io/evanstern/voice-claude`. Use `IMAGE_TAG` to pin a version.
+
+## Piper Local TTS
+
+Piper is a local TTS engine that doesn't require any API keys. You can enable it with either the install script or Docker.
+
+**Bare metal:**
+```bash
+./scripts/install.sh --with-piper
+```
+Or set `INSTALL_PIPER=true` before running the script. This creates a Python virtualenv, installs `piper-tts`, and downloads the default voice model (`en_US-lessac-medium`).
+
+**Docker:**
+```bash
+docker compose -f docker-compose.prod.yml --profile piper up --build -d
+```
+The `piper-init` sidecar container auto-downloads the model on first run.
+
+Then set in `.env`:
+```bash
+TTS_PROVIDER=piper
+```
+
+## Reverse Proxy (Traefik)
+
+The production Docker Compose files include Traefik labels. To use them:
+
+1. Set `BEHIND_PROXY=true` in `.env`
+2. Set `VOICE_CLAUDE_HOST` to your domain (default: `voice.local.infinity-node.win`)
+3. Ensure a `traefik-network` Docker network exists (or set `TRAEFIK_NETWORK` to your network name)
+
+Routes configured:
+- `/ws` and `/trpc` → server container (port 4000)
+- `/api/health` → server container
+- Everything else → web container (port 3000)
+
+## Development
+
+```bash
+pnpm dev          # Start server + web in dev mode with hot reload
+pnpm build        # Build all packages
+pnpm lint         # Biome linter
+pnpm format       # Biome formatter
+pnpm typecheck    # TypeScript type checking
+```
+
+## Project Structure
+
+```
+voice-claude/
+├── apps/
+│   ├── server/          # Hono + tRPC backend (API, WebSocket, tool execution)
+│   └── web/             # React Router 7 PWA (mic capture, audio playback)
+├── packages/
+│   ├── contracts/       # Shared Zod schemas & types
+│   ├── shared/          # Shared utilities
+│   └── ui/              # Radix + Tailwind component library
+├── scripts/
+│   ├── install.sh       # Full setup script (Node, pnpm, deps, build, systemd)
+│   ├── start.sh         # Production process manager (ExecStart for systemd)
+│   └── voice-claude     # CLI source (installed to /usr/local/bin by install.sh)
+├── docker/              # Dockerfiles and support files
+├── models/              # Local model files (Piper voices)
+└── docs/                # Additional documentation
+```

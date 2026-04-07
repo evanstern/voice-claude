@@ -59,7 +59,7 @@ export class ClaudeCodeProvider implements AIProvider {
         proc = spawn('claude', args, {
           cwd: WORK_DIR,
           stdio: ['ignore', 'pipe', 'pipe'],
-          env: { ...process.env },
+          env: { ...process.env, ANTHROPIC_API_KEY: undefined },
         })
       } catch (err) {
         reject(
