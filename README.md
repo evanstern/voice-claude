@@ -193,7 +193,6 @@ TTS_PROVIDER=piper
 For bare metal installs, set `BEHIND_PROXY=true` in `~/.config/voice-claude/config.env`.
 For Docker, set it in the repo-local `.env`.
 
-```bash
 The production Docker Compose files include Traefik labels. To use them:
 
 1. Set `BEHIND_PROXY=true`
