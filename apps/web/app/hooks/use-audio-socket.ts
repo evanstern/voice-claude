@@ -179,26 +179,29 @@ export function useAudioSocket(wsUrl: string | null) {
     const ws = wsRef.current
     const canSend = ws && ws.readyState === WebSocket.OPEN
 
-    if (chunks.length > 0 && canSend) {
-      const mimeType = chunks[0]?.type || 'audio/webm'
-      const blob = new Blob(chunks, { type: mimeType })
-
-      if (action === 'detect-wake') {
+    if (action === 'detect-wake') {
+      if (chunks.length > 0 && canSend) {
+        const mimeType = chunks[0]?.type || 'audio/webm'
+        const blob = new Blob(chunks, { type: mimeType })
         log.debug(
           `sending wake window: ${(blob.size / 1024).toFixed(1)} KB (${chunks.length} chunks)`,
         )
         ws.send(blob)
         ws.send(JSON.stringify({ type: 'detect_wake' }))
+      } else if (passiveListeningRef.current) {
+        void startPassiveWindowRef.current?.()
       }
+    }
 
-      if (action === 'send-active') {
-        log.debug(
-          `sending complete recording: ${(blob.size / 1024).toFixed(1)} KB (${chunks.length} chunks)`,
-        )
-        ws.send(blob)
-        ws.send(JSON.stringify({ type: 'stop' }))
-        log.info('recording stopped, requesting transcription')
-      }
+    if (action === 'send-active' && chunks.length > 0 && canSend) {
+      const mimeType = chunks[0]?.type || 'audio/webm'
+      const blob = new Blob(chunks, { type: mimeType })
+      log.debug(
+        `sending complete recording: ${(blob.size / 1024).toFixed(1)} KB (${chunks.length} chunks)`,
+      )
+      ws.send(blob)
+      ws.send(JSON.stringify({ type: 'stop' }))
+      log.info('recording stopped, requesting transcription')
     }
 
     const shouldKeepStream =
@@ -326,6 +329,10 @@ export function useAudioSocket(wsUrl: string | null) {
 
     passiveListeningRef.current = true
     await startPassiveWindow()
+
+    if (recordingModeRef.current !== 'passive') {
+      passiveListeningRef.current = false
+    }
   }, [startPassiveWindow])
 
   const stopPassiveListening = useCallback(() => {
