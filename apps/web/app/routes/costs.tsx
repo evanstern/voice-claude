@@ -5,14 +5,9 @@ import {
   CardHeader,
   CardTitle,
 } from '@voice-claude/ui/components/card'
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useOutletContext } from 'react-router'
+import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router'
 import { getClientTRPC } from '../trpc/client.js'
-
-interface RootContext {
-  health: { status: string; timestamp: string } | null
-  wsConfig: { path: string; port: number | null } | null
-}
 
 interface ServiceCosts {
   stt: number
@@ -197,17 +192,13 @@ function CostBar({
 }
 
 export default function Costs() {
-  const { wsConfig } = useOutletContext<RootContext>()
   const [history, setHistory] = useState<CostHistory | null>(null)
   const [sessionStats, setSessionStats] = useState<SessionStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [period, setPeriod] = useState<Period>('today')
 
-  const trpc = useMemo(() => {
-    if (typeof window === 'undefined' || !wsConfig) return null
-    return getClientTRPC(wsConfig.port)
-  }, [wsConfig])
+  const trpc = typeof window === 'undefined' ? null : getClientTRPC()
 
   const fetchData = useCallback(async () => {
     if (!trpc) return
