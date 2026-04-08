@@ -43,18 +43,21 @@ export default function Home() {
 
   const wsUrl = useMemo(() => {
     if (typeof window === 'undefined' || !wsConfig) return null
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const isSecure = window.location.protocol === 'https:'
+    const protocol = isSecure ? 'wss:' : 'ws:'
+    // HTTPS implies a reverse proxy — always use same origin.
+    // HTTP (bare-metal dev) may need the direct server port.
     const host =
-      wsConfig.port != null
+      !isSecure && wsConfig.port != null
         ? `${window.location.hostname}:${wsConfig.port}`
         : window.location.host
     return `${protocol}//${host}${wsConfig.path}`
   }, [wsConfig])
 
   const trpc = useMemo(() => {
-    if (typeof window === 'undefined' || !wsConfig) return null
-    return getClientTRPC(wsConfig.port)
-  }, [wsConfig])
+    if (typeof window === 'undefined') return null
+    return getClientTRPC()
+  }, [])
 
   const audio = useAudioSocket(wsUrl)
   const { play } = useSoundEffects()
