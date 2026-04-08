@@ -5,7 +5,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@voice-claude/ui/components/card'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { getClientTRPC } from '../trpc/client.js'
 
@@ -198,10 +198,8 @@ export default function Costs() {
   const [error, setError] = useState<string | null>(null)
   const [period, setPeriod] = useState<Period>('today')
 
-  const trpc = useMemo(() => {
-    if (typeof window === 'undefined') return null
-    return getClientTRPC()
-  }, [])
+  const trpc =
+    typeof window === 'undefined' ? null : getClientTRPC()
 
   const fetchData = useCallback(async () => {
     if (!trpc) return
