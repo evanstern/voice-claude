@@ -198,8 +198,7 @@ export default function Costs() {
   const [error, setError] = useState<string | null>(null)
   const [period, setPeriod] = useState<Period>('today')
 
-  const trpc =
-    typeof window === 'undefined' ? null : getClientTRPC()
+  const trpc = typeof window === 'undefined' ? null : getClientTRPC()
 
   const fetchData = useCallback(async () => {
     if (!trpc) return

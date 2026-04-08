@@ -54,8 +54,7 @@ export default function Home() {
     return `${protocol}//${host}${wsConfig.path}`
   }, [wsConfig])
 
-  const trpc =
-    typeof window === 'undefined' ? null : getClientTRPC()
+  const trpc = typeof window === 'undefined' ? null : getClientTRPC()
 
   const audio = useAudioSocket(wsUrl)
   const { play } = useSoundEffects()
