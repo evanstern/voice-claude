@@ -733,6 +733,10 @@ export function useAudioSocket(wsUrl: string | null) {
     [],
   )
 
+  const setPhase = useCallback((phase: ProcessingPhase) => {
+    setState((s) => ({ ...s, phase }))
+  }, [])
+
   const busy =
     state.phase !== 'idle' &&
     state.phase !== 'done' &&
@@ -754,5 +758,6 @@ export function useAudioSocket(wsUrl: string | null) {
     cancelPlayback,
     micStream,
     sendConversation,
+    setPhase,
   }
 }
