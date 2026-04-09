@@ -1,10 +1,18 @@
 # voice-claude
 
-A hands-free voice interface for Claude. Talk to Claude through Bluetooth earbuds on your phone while your hands are busy, and have Claude working on code, managing repos, and talking back.
+A hands-free voice interface for coding agents. Talk through Bluetooth earbuds on your phone while your hands are busy, and have the agent work on code, manage repos, and talk back.
+
+> Planned successor repo: **voice-coda** — the broader wake-word-first version of this project. See [`docs/successor/voice-coda-plan.md`](docs/successor/voice-coda-plan.md) and [`docs/successor/voice-coda-migration-checklist.md`](docs/successor/voice-coda-migration-checklist.md).
 
 ```
-Earbuds Mic → Speech-to-Text → Claude API (with tool use) → Text-to-Speech → Earbuds Speaker
+Earbuds Mic → Wake-word detection (optional) → Speech-to-Text → AI agent/tools → Text-to-Speech → Earbuds Speaker
 ```
+
+## Current Direction
+
+- **Provider-agnostic agent backend** — supports Anthropic directly, Claude Code CLI, or OpenCode headless.
+- **Wake-word path in progress** — includes an openWakeWord service, browser integration, and training assets for the custom `"Coda"` wake word.
+- **Successor planning** — `voice-coda` is the intended next repo/product name once the wake-word-first flow is ready to split out.
 
 ## Prerequisites
 
@@ -65,14 +73,32 @@ OPENAI_API_KEY=sk-...          # Required for default Whisper STT and OpenAI TTS
 | `LOG_LEVEL` | `debug` (dev) / `info` (prod) | Logging verbosity: `debug`, `info`, `warn`, `error` |
 | `ANTHROPIC_API_KEY` | -- | **Required.** Anthropic API key for Claude |
 | `OPENAI_API_KEY` | -- | **Required** (when using OpenAI STT/TTS) |
-| `AI_PROVIDER` | `anthropic` | `anthropic` (direct API) or `claude-code` (Claude Code CLI) |
+| `AI_PROVIDER` | `anthropic` | `anthropic` (direct API), `claude-code` (Claude Code CLI), or `opencode` (OpenCode headless) |
+| `OPENCODE_URL` | `http://127.0.0.1:4096` | OpenCode headless server URL when `AI_PROVIDER=opencode` |
 | `CLAUDE_MODEL` | `auto` | Model routing: `auto`, `sonnet`, or `haiku` |
 | `STT_PROVIDER` | `openai` | Speech-to-text: `openai` or `local` |
 | `TTS_PROVIDER` | `openai` | Text-to-speech: `openai`, `google`, or `piper` |
 | `TTS_VOICE` | `nova` | OpenAI TTS voice name |
-| `WORK_DIR` | `./workspace` | Host directory mounted for Claude tool execution |
+| `WORK_DIR` | `./workspace` | Host directory mounted for AI tool execution |
+| `WAKE_WORD_PORT` | `9000` | openWakeWord WebSocket service port |
 | `BEHIND_PROXY` | `false` | Set `true` when behind a reverse proxy (Traefik, nginx) |
 | `CONVERSATIONS_DIR` | `./data/conversations` | Where conversation history is stored (production Docker) |
+
+### Wake Word Detection (openWakeWord)
+
+The repo now includes an optional wake-word service intended for the passive-listening flow:
+
+```bash
+WAKE_WORD_PORT=9000
+WAKE_WORD_MODEL=./models/wake-word/coda.tflite
+WAKE_WORD_THRESHOLD=0.5
+WAKE_WORD_VAD_THRESHOLD=0.5
+WAKE_WORD_PATIENCE=3
+WAKE_WORD_DEBOUNCE=2.0
+WAKE_WORD_MODELS_DIR=./models/wake-word
+```
+
+This service is designed to keep a lightweight listener running until it hears `"Coda"`, then hand off to the existing active recording / STT / agent / TTS pipeline.
 
 ### TTS Provider Options
 
@@ -221,6 +247,8 @@ voice-claude/
 ├── apps/
 │   ├── server/          # Hono + tRPC backend (API, WebSocket, tool execution)
 │   └── web/             # React Router 7 PWA (mic capture, audio playback)
+├── services/
+│   └── wake-word/       # openWakeWord service, model config, and training assets
 ├── packages/
 │   ├── contracts/       # Shared Zod schemas & types
 │   ├── shared/          # Shared utilities
