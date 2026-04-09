@@ -394,7 +394,13 @@ async function handleControl(
           voiceInput.routingHint,
         )
 
-        recordLLM(sessionId, response.usage, response.model, providerName)
+        recordLLM(
+          sessionId,
+          response.usage,
+          response.model,
+          response.providerID ?? providerName,
+          response.reportedCost,
+        )
 
         // Persist assistant message
         if (conversationId) {

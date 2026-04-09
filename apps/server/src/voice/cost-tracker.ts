@@ -208,15 +208,22 @@ export function recordLLM(
   usage: LLMUsage,
   model = 'claude-sonnet-4-6',
   provider = 'anthropic',
+  reportedCost?: number,
 ): number {
-  const inputCost = (usage.input_tokens / 1_000_000) * RATES.llmInputPer1M
-  const outputCost = (usage.output_tokens / 1_000_000) * RATES.llmOutputPer1M
-  const cacheReadCost =
-    ((usage.cache_read_input_tokens ?? 0) / 1_000_000) * RATES.llmCacheReadPer1M
-  const cacheWriteCost =
-    ((usage.cache_creation_input_tokens ?? 0) / 1_000_000) *
-    RATES.llmCacheWritePer1M
-  const cost = inputCost + outputCost + cacheReadCost + cacheWriteCost
+  let cost: number
+  if (reportedCost != null && reportedCost > 0) {
+    cost = reportedCost
+  } else {
+    const inputCost = (usage.input_tokens / 1_000_000) * RATES.llmInputPer1M
+    const outputCost = (usage.output_tokens / 1_000_000) * RATES.llmOutputPer1M
+    const cacheReadCost =
+      ((usage.cache_read_input_tokens ?? 0) / 1_000_000) *
+      RATES.llmCacheReadPer1M
+    const cacheWriteCost =
+      ((usage.cache_creation_input_tokens ?? 0) / 1_000_000) *
+      RATES.llmCacheWritePer1M
+    cost = inputCost + outputCost + cacheReadCost + cacheWriteCost
+  }
 
   const session = ensureSession(sessionId)
   session.costs.llm += cost

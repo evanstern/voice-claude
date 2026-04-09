@@ -35,6 +35,10 @@ export interface ChatResponse {
     cache_read_input_tokens: number
   }
   model: string
+  /** Upstream provider identifier (e.g. "anthropic", "openai") when available. */
+  providerID?: string
+  /** Cost reported by the upstream provider/harness. When set and > 0, used instead of token-based estimation. */
+  reportedCost?: number
 }
 
 // --- Provider factory ---

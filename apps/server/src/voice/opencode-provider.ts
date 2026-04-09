@@ -16,6 +16,8 @@ interface OpenCodeSessionResponse {
 interface OpenCodeMessageResponse {
   info?: {
     modelID?: string
+    providerID?: string
+    cost?: number
     tokens?: {
       input?: number
       output?: number
@@ -34,6 +36,10 @@ export class OpenCodeProvider implements AIProvider {
   private readonly baseUrl = process.env.OPENCODE_URL ?? DEFAULT_OPENCODE_URL
   private sessionMap = new Map<string, string>()
   private sessionLastActive = new Map<string, number>()
+  private pendingHistory = new Map<
+    string,
+    Array<{ role: 'user' | 'assistant'; content: string }>
+  >()
   private evictionTimer: ReturnType<typeof setInterval>
 
   constructor() {
@@ -63,9 +69,20 @@ export class OpenCodeProvider implements AIProvider {
     )
     this.sessionLastActive.set(params.sessionId, Date.now())
 
-    const promptText = params.voiceContext
-      ? `${VOICE_MODE_PREFIX}${params.userText}`
-      : params.userText
+    let promptText = params.userText
+
+    const history = this.pendingHistory.get(params.sessionId)
+    if (history && history.length > 0) {
+      this.pendingHistory.delete(params.sessionId)
+      const summary = history
+        .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+        .join('\n')
+      promptText = `[CONVERSATION HISTORY - the user is resuming a previous conversation]\n${summary}\n\n[CURRENT MESSAGE]\n${promptText}`
+    }
+
+    if (params.voiceContext) {
+      promptText = `${VOICE_MODE_PREFIX}${promptText}`
+    }
 
     const response = await this.request<OpenCodeMessageResponse>(
       `/session/${ocSessionId}/message`,
@@ -90,6 +107,10 @@ export class OpenCodeProvider implements AIProvider {
       params.onToolUse?.(toolCall.name, toolCall.input)
     }
 
+    if (!response.info?.tokens) {
+      log.warn('opencode response missing token usage data')
+    }
+
     return {
       text,
       toolCalls,
@@ -100,18 +121,29 @@ export class OpenCodeProvider implements AIProvider {
         cache_read_input_tokens: response.info?.tokens?.cache?.read ?? 0,
       },
       model: response.info?.modelID ?? 'opencode',
+      providerID: response.info?.providerID,
+      reportedCost: response.info?.cost,
     }
   }
 
   clearSession(sessionId: string): void {
     this.sessionMap.delete(sessionId)
     this.sessionLastActive.delete(sessionId)
+    this.pendingHistory.delete(sessionId)
   }
 
   restoreSession(
-    _sessionId: string,
-    _history: Array<{ role: 'user' | 'assistant'; content: string }>,
-  ): void {}
+    sessionId: string,
+    history: Array<{ role: 'user' | 'assistant'; content: string }>,
+  ): void {
+    if (history.length > 0) {
+      this.pendingHistory.set(sessionId, history)
+      log.info(
+        { session: sessionId.slice(0, 8), messageCount: history.length },
+        'session history queued for restoration',
+      )
+    }
+  }
 
   private async getOrCreateSessionId(
     sessionId: string,
