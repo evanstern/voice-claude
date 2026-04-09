@@ -2,7 +2,7 @@
 
 A hands-free voice interface for coding agents. Talk through Bluetooth earbuds on your phone while your hands are busy, and have the agent work on code, manage repos, and talk back.
 
-> Planned successor repo: **voice-coda** — the broader wake-word-first version of this project. See [`docs/successor/voice-coda-plan.md`](docs/successor/voice-coda-plan.md) and [`docs/successor/voice-coda-migration-checklist.md`](docs/successor/voice-coda-migration-checklist.md).
+> Planned successor repo: **voice-coda** — the broader wake-word-first version of this project. See [`docs/successor/voice-coda-plan.md`](docs/successor/voice-coda-plan.md), [`docs/successor/voice-coda-execution-plan.md`](docs/successor/voice-coda-execution-plan.md), and [`docs/successor/voice-coda-migration-checklist.md`](docs/successor/voice-coda-migration-checklist.md).
 
 ```
 Earbuds Mic → Wake-word detection (optional) → Speech-to-Text → AI agent/tools → Text-to-Speech → Earbuds Speaker

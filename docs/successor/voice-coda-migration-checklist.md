@@ -1,5 +1,7 @@
 # voice-coda migration checklist
 
+Use this alongside [`voice-coda-execution-plan.md`](./voice-coda-execution-plan.md), which defines the recommended sequencing and cutover strategy.
+
 ## Rename surface
 
 | Current | Target | Notes |

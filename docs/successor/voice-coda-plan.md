@@ -44,3 +44,8 @@ The successor README should lead with:
 - Claude-specific branding in user-facing copy
 - naming that assumes Anthropic is the only backend
 - docs that describe the project as only a voice shell for Claude
+
+## Next planning docs
+
+- [`voice-coda-execution-plan.md`](./voice-coda-execution-plan.md) — phased execution plan for creating and cutting over to the new repo
+- [`voice-coda-migration-checklist.md`](./voice-coda-migration-checklist.md) — detailed rename surface and migration checklist
