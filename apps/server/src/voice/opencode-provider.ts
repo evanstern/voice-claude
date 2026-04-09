@@ -175,10 +175,28 @@ export class OpenCodeProvider implements AIProvider {
         throw error
       }
 
+      // Rethrow application-level errors from the server as-is
+      if (
+        error instanceof Error &&
+        error.message.startsWith('OpenCode request failed')
+      ) {
+        throw error
+      }
+
+      // Surface JSON parse failures clearly
+      if (error instanceof SyntaxError) {
+        throw new Error(
+          `OpenCode server at ${this.baseUrl} returned invalid JSON for ${url}: ${error.message}`,
+          { cause: error },
+        )
+      }
+
+      // Network-level failures (ECONNREFUSED, DNS, timeout, etc.)
       const message =
         error instanceof Error ? error.message : 'Unknown network error'
       throw new Error(
         `Failed to reach OpenCode server at ${this.baseUrl}: ${message}`,
+        { cause: error instanceof Error ? error : undefined },
       )
     } finally {
       signal?.removeEventListener('abort', onAbort)

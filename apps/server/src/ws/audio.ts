@@ -461,6 +461,12 @@ async function handleControl(
 
         finalizeInteraction(sessionId)
       } catch (err) {
+        if (signal.aborted) {
+          log.debug('cancelled during ai call')
+          finalizeInteraction(sessionId)
+          clearAbort()
+          break
+        }
         const message = err instanceof Error ? err.message : 'Unknown error'
         log.error({ err: message }, 'AI error')
         send(ws, { type: 'ai_response', text: '', error: message })

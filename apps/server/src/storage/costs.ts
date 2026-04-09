@@ -58,6 +58,33 @@ export async function appendCostRecord(record: CostRecord): Promise<void> {
   await appendFile(HISTORY_FILE, `${JSON.stringify(record)}\n`)
 }
 
+function normalizeLegacyRecord(raw: Record<string, unknown>): CostRecord {
+  const costs = (raw.costs ?? {}) as Record<string, number>
+  const usage = (raw.usage ?? {}) as Record<string, number>
+  return {
+    timestamp: (raw.timestamp as string) ?? '',
+    sessionId: (raw.sessionId as string) ?? '',
+    costs: {
+      stt: costs.stt ?? 0,
+      llm: costs.llm ?? costs.claude ?? 0,
+      tts: costs.tts ?? 0,
+    },
+    usage: {
+      sttDurationSec: usage.sttDurationSec ?? 0,
+      llmInputTokens:
+        usage.llmInputTokens ?? usage.claudeInputTokens ?? 0,
+      llmOutputTokens:
+        usage.llmOutputTokens ?? usage.claudeOutputTokens ?? 0,
+      llmCacheReadTokens:
+        usage.llmCacheReadTokens ?? usage.claudeCacheReadTokens ?? 0,
+      llmCacheWriteTokens:
+        usage.llmCacheWriteTokens ?? usage.claudeCacheWriteTokens ?? 0,
+      ttsChars: usage.ttsChars ?? 0,
+    },
+    providers: (raw.providers as CostRecord['providers']) ?? [],
+  }
+}
+
 async function readAllRecords(): Promise<CostRecord[]> {
   await ensureDir()
   let content: string
@@ -67,7 +94,9 @@ async function readAllRecords(): Promise<CostRecord[]> {
     return []
   }
   if (!content) return []
-  return content.split('\n').map((line) => JSON.parse(line) as CostRecord)
+  return content
+    .split('\n')
+    .map((line) => normalizeLegacyRecord(JSON.parse(line)))
 }
 
 export async function queryCosts(
