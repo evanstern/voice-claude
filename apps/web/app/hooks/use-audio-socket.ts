@@ -22,8 +22,8 @@ interface AudioSocketState {
   totalBytes: number
   transcription: string | null
   transcriptionError: string | null
-  claudeResponse: string | null
-  claudeError: string | null
+  aiResponse: string | null
+  aiError: string | null
   toolCalls: Array<{ name: string; input: string; result: string }>
   activeTools: string[]
   commandNotice: string | null
@@ -100,8 +100,8 @@ export function useAudioSocket(wsUrl: string | null) {
     totalBytes: 0,
     transcription: null,
     transcriptionError: null,
-    claudeResponse: null,
-    claudeError: null,
+    aiResponse: null,
+    aiError: null,
     toolCalls: [],
     activeTools: [],
     commandNotice: null,
@@ -312,8 +312,8 @@ export function useAudioSocket(wsUrl: string | null) {
       totalBytes: 0,
       transcription: null,
       transcriptionError: null,
-      claudeResponse: null,
-      claudeError: null,
+      aiResponse: null,
+      aiError: null,
       toolCalls: [],
       activeTools: [],
       commandNotice: null,
@@ -465,36 +465,36 @@ export function useAudioSocket(wsUrl: string | null) {
           break
 
         case 'thinking':
-          log.debug('claude is thinking')
+          log.debug('ai is thinking')
           setState((s) => ({ ...s, phase: 'thinking' }))
           break
 
         case 'tool_use':
-          log.debug(`claude using tool: ${msg.name}`)
+          log.debug(`ai using tool: ${msg.name}`)
           setState((s) => ({
             ...s,
             activeTools: [...s.activeTools, msg.name],
           }))
           break
 
-        case 'claude_response':
+        case 'ai_response':
           if (msg.error) {
-            log.error(`claude error: ${msg.error}`)
+            log.error(`ai error: ${msg.error}`)
             setState((s) => ({
               ...s,
               phase: 'done',
-              claudeResponse: null,
-              claudeError: msg.error ?? null,
+              aiResponse: null,
+              aiError: msg.error ?? null,
               toolCalls: msg.toolCalls ?? [],
               activeTools: [],
             }))
           } else {
-            log.info(`claude: "${(msg.text ?? '').slice(0, 100)}..."`)
+            log.info(`ai: "${(msg.text ?? '').slice(0, 100)}..."`)
             // Don't set phase to 'done' yet — TTS may follow
             setState((s) => ({
               ...s,
-              claudeResponse: msg.text ?? null,
-              claudeError: null,
+              aiResponse: msg.text ?? null,
+              aiError: null,
               toolCalls: msg.toolCalls ?? [],
               activeTools: [],
             }))
@@ -533,8 +533,8 @@ export function useAudioSocket(wsUrl: string | null) {
             ...(msg.command === 'clear'
               ? {
                   transcription: null,
-                  claudeResponse: null,
-                  claudeError: null,
+                  aiResponse: null,
+                  aiError: null,
                   toolCalls: [],
                 }
               : {}),

@@ -1,25 +1,20 @@
-// Per-interaction cost tracking for STT, Claude, and TTS API calls.
-
 import { logger } from '../logger.js'
 import { appendCostRecord } from '../storage/costs.js'
 
 const log = logger.child({ module: 'cost' })
 
-// Pricing rates
+// Fallback pricing rates (Anthropic Claude Sonnet defaults).
+// Used only when the provider does not report cost via reportedCost.
 const RATES = {
-  // Whisper: $0.006 per minute of audio
   whisperPerMinute: 0.006,
-  // Claude Sonnet: $3 per 1M input tokens, $15 per 1M output tokens
-  claudeInputPer1M: 3,
-  claudeOutputPer1M: 15,
-  // Cache tokens: input tokens read from cache are 90% cheaper, write is 25% more
-  claudeCacheReadPer1M: 0.3,
-  claudeCacheWritePer1M: 3.75,
-  // OpenAI TTS (tts-1): $15 per 1M characters
+  llmInputPer1M: 3,
+  llmOutputPer1M: 15,
+  llmCacheReadPer1M: 0.3,
+  llmCacheWritePer1M: 3.75,
   ttsCharsPer1M: 15,
 } as const
 
-export interface ClaudeUsage {
+export interface LLMUsage {
   input_tokens: number
   output_tokens: number
   cache_creation_input_tokens?: number
@@ -28,7 +23,7 @@ export interface ClaudeUsage {
 
 interface ServiceCosts {
   stt: number
-  claude: number
+  llm: number
   tts: number
 }
 
@@ -43,10 +38,10 @@ interface SessionStats {
   interactions: number
   costs: ServiceCosts
   sttDurationSec: number
-  claudeInputTokens: number
-  claudeOutputTokens: number
-  claudeCacheReadTokens: number
-  claudeCacheWriteTokens: number
+  llmInputTokens: number
+  llmOutputTokens: number
+  llmCacheReadTokens: number
+  llmCacheWriteTokens: number
   ttsChars: number
 }
 
@@ -54,10 +49,10 @@ interface GlobalStats {
   totalInteractions: number
   totalCosts: ServiceCosts
   totalSttDurationSec: number
-  totalClaudeInputTokens: number
-  totalClaudeOutputTokens: number
-  totalClaudeCacheReadTokens: number
-  totalClaudeCacheWriteTokens: number
+  totalLlmInputTokens: number
+  totalLlmOutputTokens: number
+  totalLlmCacheReadTokens: number
+  totalLlmCacheWriteTokens: number
   totalTtsChars: number
   sessions: number
   startedAt: string
@@ -67,12 +62,12 @@ interface GlobalStats {
 const sessionData = new Map<string, SessionStats>()
 const globalStats: GlobalStats = {
   totalInteractions: 0,
-  totalCosts: { stt: 0, claude: 0, tts: 0 },
+  totalCosts: { stt: 0, llm: 0, tts: 0 },
   totalSttDurationSec: 0,
-  totalClaudeInputTokens: 0,
-  totalClaudeOutputTokens: 0,
-  totalClaudeCacheReadTokens: 0,
-  totalClaudeCacheWriteTokens: 0,
+  totalLlmInputTokens: 0,
+  totalLlmOutputTokens: 0,
+  totalLlmCacheReadTokens: 0,
+  totalLlmCacheWriteTokens: 0,
   totalTtsChars: 0,
   sessions: 0,
   startedAt: new Date().toISOString(),
@@ -99,7 +94,7 @@ function trackProviderModel(
 // Pending costs for the current interaction (accumulated across calls, logged together)
 const pendingCosts = new Map<
   string,
-  { stt: number; claude: number; tts: number }
+  { stt: number; llm: number; tts: number }
 >()
 
 // Pending usage metrics for the current interaction (for persistence)
@@ -107,10 +102,10 @@ const pendingUsage = new Map<
   string,
   {
     sttDurationSec: number
-    claudeInputTokens: number
-    claudeOutputTokens: number
-    claudeCacheReadTokens: number
-    claudeCacheWriteTokens: number
+    llmInputTokens: number
+    llmOutputTokens: number
+    llmCacheReadTokens: number
+    llmCacheWriteTokens: number
     ttsChars: number
   }
 >()
@@ -126,12 +121,12 @@ function ensureSession(sessionId: string): SessionStats {
     globalStats.sessions++
     sessionData.set(sessionId, {
       interactions: 0,
-      costs: { stt: 0, claude: 0, tts: 0 },
+      costs: { stt: 0, llm: 0, tts: 0 },
       sttDurationSec: 0,
-      claudeInputTokens: 0,
-      claudeOutputTokens: 0,
-      claudeCacheReadTokens: 0,
-      claudeCacheWriteTokens: 0,
+      llmInputTokens: 0,
+      llmOutputTokens: 0,
+      llmCacheReadTokens: 0,
+      llmCacheWriteTokens: 0,
       ttsChars: 0,
     })
   }
@@ -142,11 +137,11 @@ function ensureSession(sessionId: string): SessionStats {
 
 function ensurePending(sessionId: string): {
   stt: number
-  claude: number
+  llm: number
   tts: number
 } {
   if (!pendingCosts.has(sessionId)) {
-    pendingCosts.set(sessionId, { stt: 0, claude: 0, tts: 0 })
+    pendingCosts.set(sessionId, { stt: 0, llm: 0, tts: 0 })
   }
   const pending = pendingCosts.get(sessionId)
   if (!pending)
@@ -159,10 +154,10 @@ function ensurePendingUsage(sessionId: string) {
   if (!usage) {
     usage = {
       sttDurationSec: 0,
-      claudeInputTokens: 0,
-      claudeOutputTokens: 0,
-      claudeCacheReadTokens: 0,
-      claudeCacheWriteTokens: 0,
+      llmInputTokens: 0,
+      llmOutputTokens: 0,
+      llmCacheReadTokens: 0,
+      llmCacheWriteTokens: 0,
       ttsChars: 0,
     }
     pendingUsage.set(sessionId, usage)
@@ -206,43 +201,49 @@ export function recordSTT(
   return cost
 }
 
-export function recordClaude(
+export function recordLLM(
   sessionId: string,
-  usage: ClaudeUsage,
+  usage: LLMUsage,
   model = 'claude-sonnet-4-6',
+  provider = 'anthropic',
+  reportedCost?: number,
 ): number {
-  const inputCost = (usage.input_tokens / 1_000_000) * RATES.claudeInputPer1M
-  const outputCost = (usage.output_tokens / 1_000_000) * RATES.claudeOutputPer1M
-  const cacheReadCost =
-    ((usage.cache_read_input_tokens ?? 0) / 1_000_000) *
-    RATES.claudeCacheReadPer1M
-  const cacheWriteCost =
-    ((usage.cache_creation_input_tokens ?? 0) / 1_000_000) *
-    RATES.claudeCacheWritePer1M
-  const cost = inputCost + outputCost + cacheReadCost + cacheWriteCost
+  let cost: number
+  if (reportedCost != null && reportedCost > 0) {
+    cost = reportedCost
+  } else {
+    const inputCost = (usage.input_tokens / 1_000_000) * RATES.llmInputPer1M
+    const outputCost = (usage.output_tokens / 1_000_000) * RATES.llmOutputPer1M
+    const cacheReadCost =
+      ((usage.cache_read_input_tokens ?? 0) / 1_000_000) *
+      RATES.llmCacheReadPer1M
+    const cacheWriteCost =
+      ((usage.cache_creation_input_tokens ?? 0) / 1_000_000) *
+      RATES.llmCacheWritePer1M
+    cost = inputCost + outputCost + cacheReadCost + cacheWriteCost
+  }
 
   const session = ensureSession(sessionId)
-  session.costs.claude += cost
-  session.claudeInputTokens += usage.input_tokens
-  session.claudeOutputTokens += usage.output_tokens
-  session.claudeCacheReadTokens += usage.cache_read_input_tokens ?? 0
-  session.claudeCacheWriteTokens += usage.cache_creation_input_tokens ?? 0
-  globalStats.totalCosts.claude += cost
-  globalStats.totalClaudeInputTokens += usage.input_tokens
-  globalStats.totalClaudeOutputTokens += usage.output_tokens
-  globalStats.totalClaudeCacheReadTokens += usage.cache_read_input_tokens ?? 0
-  globalStats.totalClaudeCacheWriteTokens +=
-    usage.cache_creation_input_tokens ?? 0
-  trackProviderModel('anthropic', model, cost)
+  session.costs.llm += cost
+  session.llmInputTokens += usage.input_tokens
+  session.llmOutputTokens += usage.output_tokens
+  session.llmCacheReadTokens += usage.cache_read_input_tokens ?? 0
+  session.llmCacheWriteTokens += usage.cache_creation_input_tokens ?? 0
+  globalStats.totalCosts.llm += cost
+  globalStats.totalLlmInputTokens += usage.input_tokens
+  globalStats.totalLlmOutputTokens += usage.output_tokens
+  globalStats.totalLlmCacheReadTokens += usage.cache_read_input_tokens ?? 0
+  globalStats.totalLlmCacheWriteTokens += usage.cache_creation_input_tokens ?? 0
+  trackProviderModel(provider, model, cost)
 
   const pending = ensurePending(sessionId)
-  pending.claude += cost
+  pending.llm += cost
   const pu = ensurePendingUsage(sessionId)
-  pu.claudeInputTokens += usage.input_tokens
-  pu.claudeOutputTokens += usage.output_tokens
-  pu.claudeCacheReadTokens += usage.cache_read_input_tokens ?? 0
-  pu.claudeCacheWriteTokens += usage.cache_creation_input_tokens ?? 0
-  addPendingProvider(sessionId, 'anthropic', model, cost)
+  pu.llmInputTokens += usage.input_tokens
+  pu.llmOutputTokens += usage.output_tokens
+  pu.llmCacheReadTokens += usage.cache_read_input_tokens ?? 0
+  pu.llmCacheWriteTokens += usage.cache_creation_input_tokens ?? 0
+  addPendingProvider(sessionId, provider, model, cost)
   return cost
 }
 
@@ -268,28 +269,24 @@ export function recordTTS(
   return cost
 }
 
-/**
- * Call after each full interaction (STT + Claude + TTS) to log the cost
- * summary and increment the interaction counter.
- */
 export function finalizeInteraction(sessionId: string): void {
   const session = ensureSession(sessionId)
   session.interactions++
   globalStats.totalInteractions++
 
-  const pending = pendingCosts.get(sessionId) ?? { stt: 0, claude: 0, tts: 0 }
-  const total = pending.stt + pending.claude + pending.tts
+  const pending = pendingCosts.get(sessionId) ?? { stt: 0, llm: 0, tts: 0 }
+  const total = pending.stt + pending.llm + pending.tts
 
   log.info(
     {
       interaction: globalStats.totalInteractions,
       stt: pending.stt.toFixed(4),
-      claude: pending.claude.toFixed(4),
+      llm: pending.llm.toFixed(4),
       tts: pending.tts.toFixed(4),
       total: total.toFixed(4),
       cumulative: (
         globalStats.totalCosts.stt +
-        globalStats.totalCosts.claude +
+        globalStats.totalCosts.llm +
         globalStats.totalCosts.tts
       ).toFixed(4),
     },
@@ -299,10 +296,10 @@ export function finalizeInteraction(sessionId: string): void {
   // Persist to disk for historical queries
   const usage = pendingUsage.get(sessionId) ?? {
     sttDurationSec: 0,
-    claudeInputTokens: 0,
-    claudeOutputTokens: 0,
-    claudeCacheReadTokens: 0,
-    claudeCacheWriteTokens: 0,
+    llmInputTokens: 0,
+    llmOutputTokens: 0,
+    llmCacheReadTokens: 0,
+    llmCacheWriteTokens: 0,
     ttsChars: 0,
   }
   const providers = pendingProviders.get(sessionId) ?? []
@@ -333,7 +330,7 @@ export function cleanupSession(sessionId: string): void {
 export function getStats() {
   const totalCost =
     globalStats.totalCosts.stt +
-    globalStats.totalCosts.claude +
+    globalStats.totalCosts.llm +
     globalStats.totalCosts.tts
 
   const avgCostPerInteraction =
@@ -344,7 +341,7 @@ export function getStats() {
   const sessionSummaries = Array.from(sessionData.entries()).map(([id, s]) => ({
     sessionId: id.slice(0, 8),
     interactions: s.interactions,
-    totalCost: s.costs.stt + s.costs.claude + s.costs.tts,
+    totalCost: s.costs.stt + s.costs.llm + s.costs.tts,
     costs: { ...s.costs },
   }))
 
@@ -359,10 +356,10 @@ export function getStats() {
     costBreakdown: { ...globalStats.totalCosts },
     usage: {
       sttDurationSec: globalStats.totalSttDurationSec,
-      claudeInputTokens: globalStats.totalClaudeInputTokens,
-      claudeOutputTokens: globalStats.totalClaudeOutputTokens,
-      claudeCacheReadTokens: globalStats.totalClaudeCacheReadTokens,
-      claudeCacheWriteTokens: globalStats.totalClaudeCacheWriteTokens,
+      llmInputTokens: globalStats.totalLlmInputTokens,
+      llmOutputTokens: globalStats.totalLlmOutputTokens,
+      llmCacheReadTokens: globalStats.totalLlmCacheReadTokens,
+      llmCacheWriteTokens: globalStats.totalLlmCacheWriteTokens,
       ttsChars: globalStats.totalTtsChars,
     },
     byProviderModel,

@@ -101,14 +101,14 @@ export const toolUseMessage = z.object({
 
 export type ToolUseMessage = z.infer<typeof toolUseMessage>
 
-export const claudeResponseMessage = z.object({
-  type: z.literal('claude_response'),
+export const aiResponseMessage = z.object({
+  type: z.literal('ai_response'),
   text: z.string().optional(),
   error: z.string().optional(),
   toolCalls: z.array(toolCallSchema).optional(),
 })
 
-export type ClaudeResponseMessage = z.infer<typeof claudeResponseMessage>
+export type AIResponseMessage = z.infer<typeof aiResponseMessage>
 
 export const synthesizingMessage = z.object({
   type: z.literal('synthesizing'),
@@ -159,7 +159,7 @@ export const serverWsMessage = z.discriminatedUnion('type', [
   transcriptionMessage,
   thinkingMessage,
   toolUseMessage,
-  claudeResponseMessage,
+  aiResponseMessage,
   synthesizingMessage,
   ttsAudioMessage,
   ttsErrorMessage,

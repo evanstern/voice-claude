@@ -30,10 +30,10 @@ interface ConversationEntry {
 
 export function meta() {
   return [
-    { title: 'Voice Claude' },
+    { title: 'Voice Assistant' },
     {
       name: 'description',
-      content: 'Hands-free voice interface for Claude Code',
+      content: 'Hands-free voice coding assistant',
     },
   ]
 }
@@ -312,24 +312,22 @@ export default function Home() {
     }
   }, [audio.transcription, audio.transcriptionError])
 
-  // When Claude responds, finalize the entry immediately so text appears in chat
   // while TTS audio continues playing in the background.
-  const prevClaudeResponseRef = useRef<string | null>(null)
+  const prevAiResponseRef = useRef<string | null>(null)
   useEffect(() => {
     const hasNewResponse =
-      audio.claudeResponse !== null &&
-      audio.claudeResponse !== prevClaudeResponseRef.current
+      audio.aiResponse !== null &&
+      audio.aiResponse !== prevAiResponseRef.current
 
     const hasNewError =
-      audio.claudeError !== null &&
-      audio.claudeError !== prevClaudeResponseRef.current
+      audio.aiError !== null && audio.aiError !== prevAiResponseRef.current
 
     if ((hasNewResponse || hasNewError) && pendingEntry) {
-      prevClaudeResponseRef.current = audio.claudeResponse ?? audio.claudeError
+      prevAiResponseRef.current = audio.aiResponse ?? audio.aiError
       const finalized: ConversationEntry = {
         ...pendingEntry,
-        assistantText: audio.claudeResponse,
-        assistantError: audio.claudeError,
+        assistantText: audio.aiResponse,
+        assistantError: audio.aiError,
         toolCalls:
           audio.toolCalls.length > 0 ? [...audio.toolCalls] : undefined,
       }
@@ -339,8 +337,8 @@ export default function Home() {
       refreshConversations()
     }
   }, [
-    audio.claudeResponse,
-    audio.claudeError,
+    audio.aiResponse,
+    audio.aiError,
     audio.toolCalls,
     pendingEntry,
     refreshConversations,
@@ -379,10 +377,10 @@ export default function Home() {
       play('messageSent')
     }
 
-    if (curr === 'done' && (audio.transcriptionError || audio.claudeError)) {
+    if (curr === 'done' && (audio.transcriptionError || audio.aiError)) {
       play('error')
     }
-  }, [audio.phase, audio.transcriptionError, audio.claudeError, play])
+  }, [audio.phase, audio.transcriptionError, audio.aiError, play])
 
   // Audio heartbeat during long-running phases (thinking, synthesizing)
   useEffect(() => {

@@ -10,13 +10,13 @@ const HISTORY_FILE = join(DATA_DIR, 'history.jsonl')
 export interface CostRecord {
   timestamp: string
   sessionId: string
-  costs: { stt: number; claude: number; tts: number }
+  costs: { stt: number; llm: number; tts: number }
   usage: {
     sttDurationSec: number
-    claudeInputTokens: number
-    claudeOutputTokens: number
-    claudeCacheReadTokens: number
-    claudeCacheWriteTokens: number
+    llmInputTokens: number
+    llmOutputTokens: number
+    llmCacheReadTokens: number
+    llmCacheWriteTokens: number
     ttsChars: number
   }
   providers: Array<{ provider: string; model: string; cost: number }>
@@ -26,13 +26,13 @@ export interface AggregatedCosts {
   totalInteractions: number
   totalCost: number
   avgCostPerInteraction: number
-  costBreakdown: { stt: number; claude: number; tts: number }
+  costBreakdown: { stt: number; llm: number; tts: number }
   usage: {
     sttDurationSec: number
-    claudeInputTokens: number
-    claudeOutputTokens: number
-    claudeCacheReadTokens: number
-    claudeCacheWriteTokens: number
+    llmInputTokens: number
+    llmOutputTokens: number
+    llmCacheReadTokens: number
+    llmCacheWriteTokens: number
     ttsChars: number
   }
   byProviderModel: Array<{
@@ -58,6 +58,31 @@ export async function appendCostRecord(record: CostRecord): Promise<void> {
   await appendFile(HISTORY_FILE, `${JSON.stringify(record)}\n`)
 }
 
+function normalizeLegacyRecord(raw: Record<string, unknown>): CostRecord {
+  const costs = (raw.costs ?? {}) as Record<string, number>
+  const usage = (raw.usage ?? {}) as Record<string, number>
+  return {
+    timestamp: (raw.timestamp as string) ?? '',
+    sessionId: (raw.sessionId as string) ?? '',
+    costs: {
+      stt: costs.stt ?? 0,
+      llm: costs.llm ?? costs.claude ?? 0,
+      tts: costs.tts ?? 0,
+    },
+    usage: {
+      sttDurationSec: usage.sttDurationSec ?? 0,
+      llmInputTokens: usage.llmInputTokens ?? usage.claudeInputTokens ?? 0,
+      llmOutputTokens: usage.llmOutputTokens ?? usage.claudeOutputTokens ?? 0,
+      llmCacheReadTokens:
+        usage.llmCacheReadTokens ?? usage.claudeCacheReadTokens ?? 0,
+      llmCacheWriteTokens:
+        usage.llmCacheWriteTokens ?? usage.claudeCacheWriteTokens ?? 0,
+      ttsChars: usage.ttsChars ?? 0,
+    },
+    providers: (raw.providers as CostRecord['providers']) ?? [],
+  }
+}
+
 async function readAllRecords(): Promise<CostRecord[]> {
   await ensureDir()
   let content: string
@@ -67,7 +92,9 @@ async function readAllRecords(): Promise<CostRecord[]> {
     return []
   }
   if (!content) return []
-  return content.split('\n').map((line) => JSON.parse(line) as CostRecord)
+  return content
+    .split('\n')
+    .map((line) => normalizeLegacyRecord(JSON.parse(line)))
 }
 
 export async function queryCosts(
@@ -83,13 +110,13 @@ export async function queryCosts(
     return t >= fromTime && t <= toTime
   })
 
-  const costBreakdown = { stt: 0, claude: 0, tts: 0 }
+  const costBreakdown = { stt: 0, llm: 0, tts: 0 }
   const usage = {
     sttDurationSec: 0,
-    claudeInputTokens: 0,
-    claudeOutputTokens: 0,
-    claudeCacheReadTokens: 0,
-    claudeCacheWriteTokens: 0,
+    llmInputTokens: 0,
+    llmOutputTokens: 0,
+    llmCacheReadTokens: 0,
+    llmCacheWriteTokens: 0,
     ttsChars: 0,
   }
   const providerMap = new Map<
@@ -99,14 +126,14 @@ export async function queryCosts(
 
   for (const r of filtered) {
     costBreakdown.stt += r.costs.stt
-    costBreakdown.claude += r.costs.claude
+    costBreakdown.llm += r.costs.llm
     costBreakdown.tts += r.costs.tts
 
     usage.sttDurationSec += r.usage.sttDurationSec
-    usage.claudeInputTokens += r.usage.claudeInputTokens
-    usage.claudeOutputTokens += r.usage.claudeOutputTokens
-    usage.claudeCacheReadTokens += r.usage.claudeCacheReadTokens
-    usage.claudeCacheWriteTokens += r.usage.claudeCacheWriteTokens
+    usage.llmInputTokens += r.usage.llmInputTokens
+    usage.llmOutputTokens += r.usage.llmOutputTokens
+    usage.llmCacheReadTokens += r.usage.llmCacheReadTokens
+    usage.llmCacheWriteTokens += r.usage.llmCacheWriteTokens
     usage.ttsChars += r.usage.ttsChars
 
     for (const p of r.providers) {
@@ -121,7 +148,7 @@ export async function queryCosts(
     }
   }
 
-  const totalCost = costBreakdown.stt + costBreakdown.claude + costBreakdown.tts
+  const totalCost = costBreakdown.stt + costBreakdown.llm + costBreakdown.tts
   const totalInteractions = filtered.length
 
   return {

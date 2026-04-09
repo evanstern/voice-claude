@@ -1,6 +1,7 @@
 import { logger } from '../logger.js'
 import { AnthropicProvider } from './anthropic-provider.js'
 import { ClaudeCodeProvider } from './claude-code-provider.js'
+import { OpenCodeProvider } from './opencode-provider.js'
 import type { VoiceContext } from './voice-context.js'
 
 const log = logger.child({ module: 'ai' })
@@ -34,6 +35,10 @@ export interface ChatResponse {
     cache_read_input_tokens: number
   }
   model: string
+  /** Upstream provider identifier (e.g. "anthropic", "openai") when available. */
+  providerID?: string
+  /** Cost reported by the upstream provider/harness. When set and > 0, used instead of token-based estimation. */
+  reportedCost?: number
 }
 
 // --- Provider factory ---
@@ -41,6 +46,7 @@ export interface ChatResponse {
 const providers: Record<string, () => AIProvider> = {
   anthropic: () => new AnthropicProvider(),
   'claude-code': () => new ClaudeCodeProvider(),
+  opencode: () => new OpenCodeProvider(),
 }
 
 let cached: AIProvider | null = null

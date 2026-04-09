@@ -144,7 +144,7 @@ export function ChatMessage({
                 : 'text-left text-primary/80'
             }`}
           >
-            {isUser ? 'You' : 'Claude'}
+            {isUser ? 'You' : 'AI'}
           </p>
 
           {/* Message bubble */}

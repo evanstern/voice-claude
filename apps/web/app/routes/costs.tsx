@@ -11,7 +11,7 @@ import { getClientTRPC } from '../trpc/client.js'
 
 interface ServiceCosts {
   stt: number
-  claude: number
+  llm: number
   tts: number
 }
 
@@ -36,10 +36,10 @@ interface CostHistory {
   costBreakdown: ServiceCosts
   usage: {
     sttDurationSec: number
-    claudeInputTokens: number
-    claudeOutputTokens: number
-    claudeCacheReadTokens: number
-    claudeCacheWriteTokens: number
+    llmInputTokens: number
+    llmOutputTokens: number
+    llmCacheReadTokens: number
+    llmCacheWriteTokens: number
     ttsChars: number
   }
   byProviderModel: ProviderModelEntry[]
@@ -119,7 +119,7 @@ function periodLabel(period: Period): string {
 
 export function meta() {
   return [
-    { title: 'Costs | Voice Claude' },
+    { title: 'Costs | Voice Assistant' },
     { name: 'description', content: 'API usage costs and breakdown' },
   ]
 }
@@ -332,8 +332,8 @@ export default function Costs() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <CostBar
-                  label="Claude (Anthropic)"
-                  cost={history.costBreakdown.claude}
+                  label="LLM"
+                  cost={history.costBreakdown.llm}
                   total={history.totalCost}
                   color="bg-violet-500"
                 />
@@ -394,19 +394,15 @@ export default function Costs() {
                       </p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">
-                        Claude Input Tokens
-                      </p>
+                      <p className="text-muted-foreground">LLM Input Tokens</p>
                       <p className="font-mono font-medium">
-                        {formatNumber(history.usage.claudeInputTokens)}
+                        {formatNumber(history.usage.llmInputTokens)}
                       </p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">
-                        Claude Output Tokens
-                      </p>
+                      <p className="text-muted-foreground">LLM Output Tokens</p>
                       <p className="font-mono font-medium">
-                        {formatNumber(history.usage.claudeOutputTokens)}
+                        {formatNumber(history.usage.llmOutputTokens)}
                       </p>
                     </div>
                   </div>
@@ -420,7 +416,7 @@ export default function Costs() {
                     <div>
                       <p className="text-muted-foreground">Cache Read Tokens</p>
                       <p className="font-mono font-medium">
-                        {formatNumber(history.usage.claudeCacheReadTokens)}
+                        {formatNumber(history.usage.llmCacheReadTokens)}
                       </p>
                     </div>
                     <div>
@@ -428,7 +424,7 @@ export default function Costs() {
                         Cache Write Tokens
                       </p>
                       <p className="font-mono font-medium">
-                        {formatNumber(history.usage.claudeCacheWriteTokens)}
+                        {formatNumber(history.usage.llmCacheWriteTokens)}
                       </p>
                     </div>
                   </div>
@@ -469,7 +465,7 @@ export default function Costs() {
                           </p>
                           <div className="flex gap-2 text-[10px] text-muted-foreground">
                             <span className="text-violet-400">
-                              C:{formatCost(session.costs.claude)}
+                              L:{formatCost(session.costs.llm)}
                             </span>
                             <span className="text-emerald-400">
                               S:{formatCost(session.costs.stt)}
