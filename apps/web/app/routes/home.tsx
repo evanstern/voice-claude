@@ -43,18 +43,18 @@ export default function Home() {
 
   const wsUrl = useMemo(() => {
     if (typeof window === 'undefined' || !wsConfig) return null
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const isSecure = window.location.protocol === 'https:'
+    const protocol = isSecure ? 'wss:' : 'ws:'
+    // HTTPS implies a reverse proxy — always use same origin.
+    // HTTP (bare-metal dev) may need the direct server port.
     const host =
-      wsConfig.port != null
+      !isSecure && wsConfig.port != null
         ? `${window.location.hostname}:${wsConfig.port}`
         : window.location.host
     return `${protocol}//${host}${wsConfig.path}`
   }, [wsConfig])
 
-  const trpc = useMemo(() => {
-    if (typeof window === 'undefined' || !wsConfig) return null
-    return getClientTRPC(wsConfig.port)
-  }, [wsConfig])
+  const trpc = typeof window === 'undefined' ? null : getClientTRPC()
 
   const audio = useAudioSocket(wsUrl)
   const { play } = useSoundEffects()
@@ -70,6 +70,9 @@ export default function Home() {
         if (audio.phase === 'recording') {
           audio.cancelRecording()
         }
+        if (audio.phase === 'passive-listening') {
+          audio.stopPassiveListening()
+        }
         return 'push-to-talk'
       }
       return 'auto'
@@ -77,12 +80,14 @@ export default function Home() {
   }, [audio])
 
   // VAD for auto mode
-  const vad = useVAD(mode === 'auto' ? audio.micStream : null, {
-    silenceThreshold: 0.01,
-    silenceTimeout: 1500,
-  })
+  const vad = useVAD(
+    mode === 'auto' && audio.phase === 'recording' ? audio.micStream : null,
+    {
+      silenceThreshold: 0.01,
+      silenceTimeout: 1500,
+    },
+  )
 
-  // In auto mode, start recording when connected and idle
   useEffect(() => {
     if (
       mode === 'auto' &&
@@ -90,9 +95,15 @@ export default function Home() {
       (audio.phase === 'idle' || audio.phase === 'done') &&
       !audio.busy
     ) {
-      audio.startRecording()
+      audio.startPassiveListening()
     }
-  }, [mode, audio.connected, audio.phase, audio.busy, audio.startRecording])
+  }, [
+    mode,
+    audio.connected,
+    audio.phase,
+    audio.busy,
+    audio.startPassiveListening,
+  ])
 
   // In auto mode, stop recording when VAD detects silence after speech
   useEffect(() => {
@@ -250,10 +261,27 @@ export default function Home() {
         navigate(`/c/${conv.id}`, { replace: true })
       } catch (err) {
         log.error('failed to auto-create conversation:', err)
+        return
       }
     }
-    audio.startRecording()
+
+    await audio.startRecording()
   }, [activeConversationId, trpc, audio, refreshConversations, navigate])
+
+  const prevWakeDetectionRef = useRef(audio.wakeDetectionId)
+  useEffect(() => {
+    if (mode !== 'auto') {
+      prevWakeDetectionRef.current = audio.wakeDetectionId
+      return
+    }
+
+    if (audio.wakeDetectionId === prevWakeDetectionRef.current) {
+      return
+    }
+
+    prevWakeDetectionRef.current = audio.wakeDetectionId
+    void handleStartRecording()
+  }, [mode, audio.wakeDetectionId, handleStartRecording])
 
   // When transcription arrives, start a new pending entry
   const prevTranscriptionRef = useRef<string | null>(null)
@@ -480,7 +508,9 @@ export default function Home() {
                 </svg>
               </div>
               <p className="text-sm text-muted-foreground">
-                Tap the mic or hold space to start talking
+                {mode === 'auto'
+                  ? 'Say “Coda” or tap the mic to start hands-free'
+                  : 'Tap the mic or hold space to start talking'}
               </p>
             </div>
           )}

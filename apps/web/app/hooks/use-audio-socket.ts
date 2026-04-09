@@ -6,6 +6,7 @@ const log = createLogger('audio')
 
 type ProcessingPhase =
   | 'idle'
+  | 'passive-listening'
   | 'recording'
   | 'transcribing'
   | 'thinking'
@@ -26,11 +27,13 @@ interface AudioSocketState {
   toolCalls: Array<{ name: string; input: string; result: string }>
   activeTools: string[]
   commandNotice: string | null
+  wakeDetectionId: number
 }
 
 const RECONNECT_BASE_DELAY = 1000
 const RECONNECT_MAX_DELAY = 30000
 const RECONNECT_MAX_ATTEMPTS = 10
+const PASSIVE_LISTEN_WINDOW_MS = 2500
 
 interface PlaybackHandle {
   promise: Promise<void>
@@ -69,6 +72,15 @@ export function useAudioSocket(wsUrl: string | null) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
+  const recordingModeRef = useRef<'active' | 'passive' | null>(null)
+  const pendingRecorderActionRef = useRef<
+    'none' | 'send-active' | 'detect-wake' | 'discard'
+  >('none')
+  const pendingActiveStartRef = useRef(false)
+  const passiveListeningRef = useRef(false)
+  const passiveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const startPassiveWindowRef = useRef<(() => Promise<void>) | null>(null)
+  const beginActiveRecordingRef = useRef<(() => Promise<void>) | null>(null)
   const expectingAudioRef = useRef(false)
   const audioFormatRef = useRef('mp3')
   const audioPlaybackRef = useRef<Promise<void> | null>(null)
@@ -93,9 +105,252 @@ export function useAudioSocket(wsUrl: string | null) {
     toolCalls: [],
     activeTools: [],
     commandNotice: null,
+    wakeDetectionId: 0,
   })
 
   const commandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearPassiveTimer = useCallback(() => {
+    if (passiveTimerRef.current) {
+      clearTimeout(passiveTimerRef.current)
+      passiveTimerRef.current = null
+    }
+  }, [])
+
+  const stopMicStream = useCallback(() => {
+    const stream = streamRef.current
+    if (stream) {
+      for (const track of stream.getTracks()) {
+        track.stop()
+      }
+    }
+    streamRef.current = null
+  }, [])
+
+  const ensureMicStream = useCallback(async () => {
+    if (streamRef.current) {
+      return streamRef.current
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 16000,
+        },
+      })
+      setMicError(null)
+      streamRef.current = stream
+      return stream
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error))
+      log.error(`getUserMedia failed: ${err.message}`)
+
+      if (err.name === 'NotAllowedError') {
+        setMicError(
+          'Microphone permission denied. Please allow microphone access and try again.',
+        )
+      } else if (err.name === 'NotFoundError') {
+        setMicError(
+          'No microphone found. Please connect a microphone and try again.',
+        )
+      } else {
+        setMicError(err.message)
+      }
+
+      setState((s) => ({ ...s, phase: 'idle' }))
+      return null
+    }
+  }, [])
+
+  const handleRecorderStop = useCallback(() => {
+    clearPassiveTimer()
+
+    const action = pendingRecorderActionRef.current
+    const mode = recordingModeRef.current
+    const chunks = chunksRef.current
+
+    mediaRecorderRef.current = null
+    recordingModeRef.current = null
+    pendingRecorderActionRef.current = 'none'
+    chunksRef.current = []
+
+    const ws = wsRef.current
+    const canSend = ws && ws.readyState === WebSocket.OPEN
+
+    if (action === 'detect-wake') {
+      if (chunks.length > 0 && canSend) {
+        const mimeType = chunks[0]?.type || 'audio/webm'
+        const blob = new Blob(chunks, { type: mimeType })
+        log.debug(
+          `sending wake window: ${(blob.size / 1024).toFixed(1)} KB (${chunks.length} chunks)`,
+        )
+        ws.send(blob)
+        ws.send(JSON.stringify({ type: 'detect_wake' }))
+      } else if (passiveListeningRef.current) {
+        void startPassiveWindowRef.current?.()
+      }
+    }
+
+    if (action === 'send-active' && chunks.length > 0 && canSend) {
+      const mimeType = chunks[0]?.type || 'audio/webm'
+      const blob = new Blob(chunks, { type: mimeType })
+      log.debug(
+        `sending complete recording: ${(blob.size / 1024).toFixed(1)} KB (${chunks.length} chunks)`,
+      )
+      ws.send(blob)
+      ws.send(JSON.stringify({ type: 'stop' }))
+      log.info('recording stopped, requesting transcription')
+    }
+
+    const shouldKeepStream =
+      mode === 'passive' &&
+      (action === 'detect-wake' ||
+        passiveListeningRef.current ||
+        pendingActiveStartRef.current)
+
+    if (!shouldKeepStream) {
+      stopMicStream()
+    }
+
+    if (pendingActiveStartRef.current) {
+      pendingActiveStartRef.current = false
+      void beginActiveRecordingRef.current?.()
+      return
+    }
+
+    if (
+      mode === 'passive' &&
+      action === 'discard' &&
+      passiveListeningRef.current
+    ) {
+      void startPassiveWindowRef.current?.()
+    }
+  }, [clearPassiveTimer, stopMicStream])
+
+  const createRecorder = useCallback(
+    (stream: MediaStream, mode: 'active' | 'passive') => {
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : 'audio/webm'
+
+      const mediaRecorder = new MediaRecorder(stream, { mimeType })
+      mediaRecorderRef.current = mediaRecorder
+      recordingModeRef.current = mode
+      pendingRecorderActionRef.current = 'none'
+      chunksRef.current = []
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunksRef.current.push(event.data)
+          log.debug(
+            `buffered ${mode} chunk #${chunksRef.current.length} (${event.data.size} B)`,
+          )
+        }
+      }
+
+      mediaRecorder.onstop = () => {
+        handleRecorderStop()
+      }
+
+      mediaRecorder.start(250)
+      return mediaRecorder
+    },
+    [handleRecorderStop],
+  )
+
+  const startPassiveWindow = useCallback(async () => {
+    if (mediaRecorderRef.current || !passiveListeningRef.current) {
+      return
+    }
+
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      return
+    }
+
+    const stream = await ensureMicStream()
+    if (!stream || mediaRecorderRef.current || !passiveListeningRef.current) {
+      return
+    }
+
+    const mediaRecorder = createRecorder(stream, 'passive')
+    setState((s) => ({ ...s, phase: 'passive-listening' }))
+
+    clearPassiveTimer()
+    passiveTimerRef.current = setTimeout(() => {
+      if (mediaRecorderRef.current !== mediaRecorder) {
+        return
+      }
+
+      pendingRecorderActionRef.current = 'detect-wake'
+      mediaRecorder.requestData()
+      mediaRecorder.stop()
+    }, PASSIVE_LISTEN_WINDOW_MS)
+  }, [clearPassiveTimer, createRecorder, ensureMicStream])
+
+  startPassiveWindowRef.current = startPassiveWindow
+
+  const beginActiveRecording = useCallback(async () => {
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN || mediaRecorderRef.current) {
+      return
+    }
+
+    const stream = await ensureMicStream()
+    if (!stream || mediaRecorderRef.current) {
+      return
+    }
+
+    createRecorder(stream, 'active')
+    log.info('recording started')
+    setState((s) => ({
+      ...s,
+      phase: 'recording',
+      chunksReceived: 0,
+      totalBytes: 0,
+      transcription: null,
+      transcriptionError: null,
+      aiResponse: null,
+      aiError: null,
+      toolCalls: [],
+      activeTools: [],
+      commandNotice: null,
+    }))
+  }, [createRecorder, ensureMicStream])
+
+  beginActiveRecordingRef.current = beginActiveRecording
+
+  const startPassiveListening = useCallback(async () => {
+    if (passiveListeningRef.current) {
+      return
+    }
+
+    passiveListeningRef.current = true
+    await startPassiveWindow()
+
+    if (recordingModeRef.current !== 'passive') {
+      passiveListeningRef.current = false
+    }
+  }, [startPassiveWindow])
+
+  const stopPassiveListening = useCallback(() => {
+    passiveListeningRef.current = false
+    pendingActiveStartRef.current = false
+    clearPassiveTimer()
+
+    const mediaRecorder = mediaRecorderRef.current
+    if (mediaRecorder && recordingModeRef.current === 'passive') {
+      pendingRecorderActionRef.current = 'discard'
+      mediaRecorder.requestData()
+      mediaRecorder.stop()
+    } else {
+      stopMicStream()
+    }
+
+    setState((s) => ({ ...s, phase: 'idle' }))
+  }, [clearPassiveTimer, stopMicStream])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: connectKey intentionally triggers reconnection
   useEffect(() => {
@@ -294,11 +549,41 @@ export function useAudioSocket(wsUrl: string | null) {
           }, 3000)
           break
         }
+
+        case 'error':
+          log.error(msg.error)
+          setState((s) => ({
+            ...s,
+            phase: 'done',
+            transcriptionError: msg.error,
+          }))
+          break
+
+        case 'wake_detection':
+          log.debug(
+            `wake detection: ${msg.detected ? 'matched' : 'no match'}${msg.text ? ` (\"${msg.text}\")` : ''}`,
+          )
+
+          if (msg.detected) {
+            passiveListeningRef.current = false
+            clearPassiveTimer()
+            setState((s) => ({
+              ...s,
+              wakeDetectionId: s.wakeDetectionId + 1,
+            }))
+          } else if (passiveListeningRef.current) {
+            void startPassiveWindowRef.current?.()
+          }
+          break
       }
     }
 
     ws.onclose = (event) => {
       log.info(`ws closed (code=${event.code})`)
+      passiveListeningRef.current = false
+      pendingActiveStartRef.current = false
+      clearPassiveTimer()
+      stopMicStream()
       setState((s) => ({ ...s, connected: false, phase: 'idle' }))
 
       if (
@@ -335,7 +620,7 @@ export function useAudioSocket(wsUrl: string | null) {
         reconnectTimerRef.current = null
       }
     }
-  }, [wsUrl, connectKey])
+  }, [wsUrl, connectKey, clearPassiveTimer, stopMicStream])
 
   // Separate effect to handle true unmount
   useEffect(() => {
@@ -348,137 +633,59 @@ export function useAudioSocket(wsUrl: string | null) {
         wsRef.current = null
         currentUrlRef.current = null
       }
+      passiveListeningRef.current = false
+      pendingActiveStartRef.current = false
+      clearPassiveTimer()
+      stopMicStream()
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current)
         reconnectTimerRef.current = null
       }
     }
-  }, [])
+  }, [clearPassiveTimer, stopMicStream])
 
   const startRecording = useCallback(async () => {
-    const ws = wsRef.current
-    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    passiveListeningRef.current = false
+    clearPassiveTimer()
 
-    let stream: MediaStream
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          sampleRate: 16000,
-        },
-      })
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error))
-      log.error(`getUserMedia failed: ${err.message}`)
-
-      if (err.name === 'NotAllowedError') {
-        setMicError(
-          'Microphone permission denied. Please allow microphone access and try again.',
-        )
-      } else if (err.name === 'NotFoundError') {
-        setMicError(
-          'No microphone found. Please connect a microphone and try again.',
-        )
-      } else {
-        setMicError(err.message)
-      }
-
-      setState((s) => ({ ...s, phase: 'idle' }))
+    const mediaRecorder = mediaRecorderRef.current
+    if (mediaRecorder && recordingModeRef.current === 'passive') {
+      pendingActiveStartRef.current = true
+      pendingRecorderActionRef.current = 'discard'
+      mediaRecorder.requestData()
+      mediaRecorder.stop()
       return
     }
 
-    // Clear any previous mic error on successful access
-    setMicError(null)
-    streamRef.current = stream
-
-    const mediaRecorder = new MediaRecorder(stream, {
-      mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : 'audio/webm',
-    })
-    mediaRecorderRef.current = mediaRecorder
-
-    chunksRef.current = []
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        chunksRef.current.push(event.data)
-        log.debug(
-          `buffered chunk #${chunksRef.current.length} (${event.data.size} B)`,
-        )
-      }
-    }
-
-    log.info('recording started')
-    mediaRecorder.start(250)
-    setState((s) => ({
-      ...s,
-      phase: 'recording',
-      chunksReceived: 0,
-      totalBytes: 0,
-      transcription: null,
-      transcriptionError: null,
-      aiResponse: null,
-      aiError: null,
-      toolCalls: [],
-      activeTools: [],
-      commandNotice: null,
-    }))
-  }, [])
+    await beginActiveRecording()
+  }, [beginActiveRecording, clearPassiveTimer])
 
   const stopRecording = useCallback(() => {
     const mediaRecorder = mediaRecorderRef.current
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-      // Request final data then stop
+    if (
+      mediaRecorder &&
+      mediaRecorder.state !== 'inactive' &&
+      recordingModeRef.current === 'active'
+    ) {
+      pendingRecorderActionRef.current = 'send-active'
       mediaRecorder.requestData()
       mediaRecorder.stop()
     }
-    mediaRecorderRef.current = null
-
-    const stream = streamRef.current
-    if (stream) {
-      for (const track of stream.getTracks()) {
-        track.stop()
-      }
-    }
-    streamRef.current = null
-
-    const ws = wsRef.current
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      // Combine all chunks into one valid webm blob and send it
-      const chunks = chunksRef.current
-      if (chunks.length > 0) {
-        const mimeType = chunks[0]?.type || 'audio/webm'
-        const blob = new Blob(chunks, { type: mimeType })
-        log.debug(
-          `sending complete recording: ${(blob.size / 1024).toFixed(1)} KB (${chunks.length} chunks)`,
-        )
-        ws.send(blob)
-      }
-      chunksRef.current = []
-
-      // Signal the server to process
-      ws.send(JSON.stringify({ type: 'stop' }))
-    }
-
-    log.info('recording stopped, requesting transcription')
   }, [])
 
   const cancelRecording = useCallback(() => {
+    passiveListeningRef.current = false
+    pendingActiveStartRef.current = false
+    clearPassiveTimer()
+
     const mediaRecorder = mediaRecorderRef.current
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      pendingRecorderActionRef.current = 'discard'
+      mediaRecorder.requestData()
       mediaRecorder.stop()
     }
-    mediaRecorderRef.current = null
-
-    const stream = streamRef.current
-    if (stream) {
-      for (const track of stream.getTracks()) {
-        track.stop()
-      }
-    }
-    streamRef.current = null
     chunksRef.current = []
+    stopMicStream()
 
     setState((s) => ({
       ...s,
@@ -486,7 +693,7 @@ export function useAudioSocket(wsUrl: string | null) {
     }))
 
     log.info('recording cancelled, no audio sent')
-  }, [])
+  }, [clearPassiveTimer, stopMicStream])
 
   const cancelPlayback = useCallback(() => {
     // Stop any in-progress audio playback
@@ -529,6 +736,7 @@ export function useAudioSocket(wsUrl: string | null) {
   const busy =
     state.phase !== 'idle' &&
     state.phase !== 'done' &&
+    state.phase !== 'passive-listening' &&
     state.phase !== 'recording'
 
   // Expose the mic stream so VAD can attach to it
@@ -539,6 +747,8 @@ export function useAudioSocket(wsUrl: string | null) {
     busy,
     micError,
     startRecording,
+    startPassiveListening,
+    stopPassiveListening,
     stopRecording,
     cancelRecording,
     cancelPlayback,

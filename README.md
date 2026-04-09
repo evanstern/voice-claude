@@ -19,9 +19,10 @@ Earbuds Mic → Speech-to-Text → Claude API (with tool use) → Text-to-Speech
 git clone https://github.com/evanstern/voice-claude.git
 cd voice-claude
 
-# Edit .env with your API keys before installing
-cp .env.example .env
-vim .env
+# Prepare the installed runtime config outside the repo
+mkdir -p ~/.config/voice-claude
+cp .env.example ~/.config/voice-claude/config.env
+vim ~/.config/voice-claude/config.env
 
 # Install everything and start the service
 ./scripts/install.sh
@@ -34,7 +35,7 @@ After installation, manage the service with:
 ```bash
 voice-claude status            # check if running
 voice-claude logs -f           # follow logs
-voice-claude restart           # restart after .env changes
+voice-claude restart           # restart after config changes
 voice-claude stop              # stop the service
 voice-claude start             # start it back up
 voice-claude update            # git pull, rebuild, restart
@@ -43,7 +44,11 @@ voice-claude uninstall         # remove service and CLI
 
 ## Configuration
 
-The install script creates a `.env` file from `.env.example`. At minimum, you need to set:
+Installed bare-metal config lives at `~/.config/voice-claude/config.env`.
+
+The install script creates that file from `.env.example` if it is missing, and migrates an existing repo-root `.env` on first install so current setups keep working.
+
+At minimum, you need to set:
 
 ```bash
 ANTHROPIC_API_KEY=sk-ant-...   # Required - Claude API access
@@ -99,6 +104,10 @@ WHISPER_BINARY=whisper-cpp  # path to whisper-cpp binary
 The install script handles everything on Debian/Ubuntu:
 
 ```bash
+mkdir -p ~/.config/voice-claude
+cp .env.example ~/.config/voice-claude/config.env
+vim ~/.config/voice-claude/config.env
+
 ./scripts/install.sh
 ```
 
@@ -106,11 +115,14 @@ What it does:
 - Installs Node.js 22 from NodeSource (if not present or outdated)
 - Installs system packages (`git`, `curl`, `jq`, `python3`, `ripgrep`, etc.)
 - Enables pnpm via corepack
-- Creates `.env` from `.env.example` (if `.env` doesn't exist)
+- Creates `~/.config/voice-claude/config.env` from `.env.example` if needed
+- Migrates an existing repo-root `.env` into `~/.config/voice-claude/config.env` on first install
 - Runs `pnpm install` and `pnpm build`
 - Creates a systemd service (`voice-claude.service`) that auto-starts on boot
 - Installs the `voice-claude` CLI to `/usr/local/bin/`
 - Starts the service
+
+For installed bare-metal deployments, edit `~/.config/voice-claude/config.env` and then run `voice-claude restart`.
 
 To update after a `git pull` (or let the CLI do it for you):
 ```bash
@@ -118,6 +130,8 @@ voice-claude update
 ```
 
 ### 2. Docker (Development)
+
+Docker still uses a repo-local `.env` file because Compose resolves `env_file` from the working directory.
 
 ```bash
 cp .env.example .env
@@ -129,6 +143,8 @@ This mounts the source tree into the containers for hot-reloading.
 
 ### 3. Docker (Production -- Build Locally)
 
+Docker still uses a repo-local `.env` file because Compose resolves `env_file` from the working directory.
+
 ```bash
 cp .env.example .env
 # Edit .env with your API keys
@@ -138,6 +154,8 @@ docker compose -f docker-compose.prod.yml up --build -d
 Builds multi-stage production images. Includes Traefik labels for reverse proxy routing -- set `VOICE_CLAUDE_HOST` to your domain.
 
 ### 4. Docker (Production -- Pre-built Images)
+
+Docker still uses a repo-local `.env` file because Compose resolves `env_file` from the working directory.
 
 ```bash
 cp .env.example .env
@@ -163,16 +181,21 @@ docker compose -f docker-compose.prod.yml --profile piper up --build -d
 ```
 The `piper-init` sidecar container auto-downloads the model on first run.
 
-Then set in `.env`:
+For bare metal installs, set this in `~/.config/voice-claude/config.env`.
+For Docker, set it in the repo-local `.env`.
+
 ```bash
 TTS_PROVIDER=piper
 ```
 
 ## Reverse Proxy (Traefik)
 
+For bare metal installs, set `BEHIND_PROXY=true` in `~/.config/voice-claude/config.env`.
+For Docker, set it in the repo-local `.env`.
+
 The production Docker Compose files include Traefik labels. To use them:
 
-1. Set `BEHIND_PROXY=true` in `.env`
+1. Set `BEHIND_PROXY=true`
 2. Set `VOICE_CLAUDE_HOST` to your domain (default: `voice.local.infinity-node.win`)
 3. Ensure a `traefik-network` Docker network exists (or set `TRAEFIK_NETWORK` to your network name)
 

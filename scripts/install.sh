@@ -11,9 +11,26 @@ DEFAULT_PIPER_MODELS_DIR="${PROJECT_ROOT}/models/piper"
 PIPER_TTS_VERSION=1.4.2
 DEFAULT_PIPER_BASE_URL="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium"
 
+if [[ ${EUID} -eq 0 && -n "${SUDO_USER:-}" ]]; then
+  INSTALL_USER=${SUDO_USER}
+else
+  INSTALL_USER=$(id -un)
+fi
+
+INSTALL_GROUP=$(id -gn "${INSTALL_USER}")
+INSTALL_HOME=$(getent passwd "${INSTALL_USER}" | cut -d: -f6 || true)
+CONFIG_HOME=${INSTALL_HOME}/.config
+CONFIG_DIR="${CONFIG_HOME}/voice-claude"
+CONFIG_FILE="${CONFIG_DIR}/config.env"
+
 WITH_PIPER=false
 if [[ "${INSTALL_PIPER:-false}" == "true" ]]; then
   WITH_PIPER=true
+fi
+
+WITH_CLOUDFLARE_TUNNEL=prompt
+if [[ "${INSTALL_CLOUDFLARE_TUNNEL:-false}" == "true" ]]; then
+  WITH_CLOUDFLARE_TUNNEL=true
 fi
 
 while [[ $# -gt 0 ]]; do
@@ -23,6 +40,12 @@ while [[ $# -gt 0 ]]; do
       ;;
     --without-piper)
       WITH_PIPER=false
+      ;;
+    --with-cloudflare-tunnel)
+      WITH_CLOUDFLARE_TUNNEL=true
+      ;;
+    --without-cloudflare-tunnel)
+      WITH_CLOUDFLARE_TUNNEL=false
       ;;
     *)
       printf 'Unknown argument: %s\n' "$1" >&2
@@ -49,6 +72,10 @@ fail() {
   printf '[install] ERROR: %s\n' "$*" >&2
   exit 1
 }
+
+if [[ -z "${INSTALL_HOME}" ]]; then
+  fail "Could not determine home directory for install user '${INSTALL_USER}'."
+fi
 
 require_apt() {
   if ! command -v apt-get >/dev/null 2>&1; then
@@ -111,28 +138,45 @@ ensure_pnpm() {
   "${SUDO[@]}" corepack prepare "pnpm@${PNPM_VERSION}" --activate
 }
 
-ensure_env_file() {
-  if [[ ! -f "${PROJECT_ROOT}/.env" ]]; then
-    log 'Creating .env from .env.example'
-    cp "${PROJECT_ROOT}/.env.example" "${PROJECT_ROOT}/.env"
+write_config_file() {
+  local source_file=$1
+
+  if [[ ${EUID} -eq 0 ]]; then
+    install -d -m 0755 -o "${INSTALL_USER}" -g "${INSTALL_GROUP}" "${CONFIG_DIR}"
+    install -m 0600 -o "${INSTALL_USER}" -g "${INSTALL_GROUP}" "${source_file}" "${CONFIG_FILE}"
+  else
+    mkdir -p "${CONFIG_DIR}"
+    install -m 0600 "${source_file}" "${CONFIG_FILE}"
+  fi
+}
+
+ensure_config_file() {
+  if [[ -f "${CONFIG_FILE}" ]]; then
+    :
+  elif [[ -f "${PROJECT_ROOT}/.env" ]]; then
+    log "Migrating existing repo config to ${CONFIG_FILE}"
+    write_config_file "${PROJECT_ROOT}/.env"
+  else
+    log "Creating installed config at ${CONFIG_FILE} from .env.example"
+    write_config_file "${PROJECT_ROOT}/.env.example"
   fi
 
   local current_work_dir
-  current_work_dir=$(grep -E '^WORK_DIR=' "${PROJECT_ROOT}/.env" | cut -d= -f2- || true)
+  current_work_dir=$(grep -E '^WORK_DIR=' "${CONFIG_FILE}" | cut -d= -f2- || true)
 
   if [[ -z "${current_work_dir}" ]]; then
-    log "Setting WORK_DIR=${HOME} in .env"
-    if grep -qE '^#?\s*WORK_DIR=' "${PROJECT_ROOT}/.env"; then
-      sed -i "s|^#\?\s*WORK_DIR=.*|WORK_DIR=${HOME}|" "${PROJECT_ROOT}/.env"
+    log "Setting WORK_DIR=${INSTALL_HOME} in ${CONFIG_FILE}"
+    if grep -qE '^#?[[:space:]]*WORK_DIR=' "${CONFIG_FILE}"; then
+      sed -E -i "s|^#?[[:space:]]*WORK_DIR=.*|WORK_DIR=${INSTALL_HOME}|" "${CONFIG_FILE}"
     else
-      printf '\nWORK_DIR=%s\n' "${HOME}" >> "${PROJECT_ROOT}/.env"
+      printf '\nWORK_DIR=%s\n' "${INSTALL_HOME}" >> "${CONFIG_FILE}"
     fi
   fi
 }
 
 load_env() {
   set -a
-  source "${PROJECT_ROOT}/.env"
+  source "${CONFIG_FILE}"
   set +a
 }
 
@@ -182,9 +226,86 @@ setup_piper() {
   download_piper_model
 }
 
+setup_cloudflare_tunnel() {
+  log 'Cloudflare Tunnel setup'
+
+  if ! command -v cloudflared >/dev/null 2>&1; then
+    log 'Installing cloudflared'
+    install_apt_packages curl gnupg
+    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | "${SUDO[@]}" gpg --yes --dearmor -o /usr/share/keyrings/cloudflare-main.gpg
+    printf 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main\n' | "${SUDO[@]}" tee /etc/apt/sources.list.d/cloudflared.list >/dev/null
+    "${SUDO[@]}" apt-get update -qq
+    "${SUDO[@]}" apt-get install -y cloudflared
+  fi
+
+  log 'Authenticating with Cloudflare (a browser URL will be printed — open it to authorise)'
+  "${SUDO[@]}" cloudflared tunnel login
+
+  printf '[install] Enter the hostname to expose (e.g. voice.example.com): '
+  read -r CF_HOSTNAME
+
+  log "Creating tunnel 'voice-claude'"
+  local tunnel_output
+  tunnel_output=$("${SUDO[@]}" cloudflared tunnel create voice-claude 2>&1)
+  printf '%s\n' "${tunnel_output}"
+  local tunnel_id
+  tunnel_id=$(printf '%s' "${tunnel_output}" | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)
+
+  if [[ -z "${tunnel_id}" ]]; then
+    fail 'Could not determine tunnel ID. Check output above.'
+  fi
+
+  log "Routing DNS: ${CF_HOSTNAME} → tunnel ${tunnel_id}"
+  "${SUDO[@]}" cloudflared tunnel route dns voice-claude "${CF_HOSTNAME}"
+
+  "${SUDO[@]}" mkdir -p /etc/cloudflared
+  "${SUDO[@]}" tee /etc/cloudflared/config.yml >/dev/null <<EOF
+tunnel: ${tunnel_id}
+credentials-file: /root/.cloudflared/${tunnel_id}.json
+
+ingress:
+  - hostname: ${CF_HOSTNAME}
+    service: http://localhost:80
+    originRequest:
+      noTLSVerify: true
+  - service: http_status:404
+EOF
+
+  "${SUDO[@]}" cloudflared service install
+  "${SUDO[@]}" systemctl start cloudflared
+  "${SUDO[@]}" systemctl enable cloudflared
+
+  log "Cloudflare Tunnel running. Access via: https://${CF_HOSTNAME}"
+  log "NOTE: Add a Traefik (or reverse proxy) route for ${CF_HOSTNAME} on port 80 to complete setup."
+}
+
+prompt_cloudflare_tunnel() {
+  if [[ ! -t 0 ]]; then
+    log 'Non-interactive mode: skipping Cloudflare Tunnel setup (re-run with --with-cloudflare-tunnel to enable)'
+    return
+  fi
+
+  printf '\n[install] Would you like to set up a Cloudflare Tunnel for public HTTPS access?\n'
+  printf '[install] This enables access via a public domain (e.g. voice.example.com) without port forwarding.\n'
+  printf '[install] Requires a Cloudflare-managed domain.\n'
+  printf '[install] If you skip this, the install will be cancelled.\n'
+  printf '[install] Set up Cloudflare Tunnel? [y/N] '
+  read -r answer
+
+  case "${answer}" in
+    [yY]|[yY][eE][sS])
+      setup_cloudflare_tunnel
+      ;;
+    *)
+      log 'Cloudflare Tunnel setup declined. Cancelling install.'
+      exit 0
+      ;;
+  esac
+}
+
 ensure_claude_code() {
   local ai_provider
-  ai_provider=$(grep -E '^AI_PROVIDER=' "${PROJECT_ROOT}/.env" | cut -d= -f2- || true)
+  ai_provider=$(grep -E '^AI_PROVIDER=' "${CONFIG_FILE}" | cut -d= -f2- || true)
 
   if [[ "${ai_provider}" != "claude-code" ]]; then
     return
@@ -209,8 +330,9 @@ ensure_claude_code() {
 
 setup_systemd_service() {
   local service_file="/etc/systemd/system/voice-claude.service"
-  local run_user
-  run_user=$(whoami)
+  local run_user run_user_home
+  run_user=${INSTALL_USER}
+  run_user_home=${INSTALL_HOME}
 
   log "Setting up systemd service (user=${run_user})"
 
@@ -222,11 +344,12 @@ After=network.target
 [Service]
 Type=simple
 User=${run_user}
-Environment=PATH=/home/${run_user}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PATH=${run_user_home}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=VOICE_CLAUDE_CONFIG=${CONFIG_FILE}
 WorkingDirectory=${PROJECT_ROOT}
 ExecStart=${PROJECT_ROOT}/scripts/start.sh
-EnvironmentFile=${PROJECT_ROOT}/.env
-Restart=on-failure
+EnvironmentFile=${CONFIG_FILE}
+Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
@@ -251,9 +374,11 @@ install_cli() {
   # Bake in the project root so the CLI works from anywhere
   "${SUDO[@]}" cp "${cli_src}" "${cli_dest}"
   "${SUDO[@]}" sed -i "s|__PROJECT_ROOT__|${PROJECT_ROOT}|g" "${cli_dest}"
+  "${SUDO[@]}" sed -i "s|__CONFIG_FILE__|${CONFIG_FILE}|g" "${cli_dest}"
   "${SUDO[@]}" chmod +x "${cli_dest}"
 
   log "Installed CLI to ${cli_dest}"
+  log "Installed config lives at ${CONFIG_FILE}"
 }
 
 main() {
@@ -262,7 +387,7 @@ main() {
   ensure_node
   install_apt_packages git curl jq less make python3 ripgrep tree wget
   ensure_pnpm
-  ensure_env_file
+  ensure_config_file
   load_env
 
   log 'Installing pnpm dependencies'
@@ -278,6 +403,15 @@ main() {
   fi
 
   ensure_claude_code
+
+  if [[ "${WITH_CLOUDFLARE_TUNNEL}" == "true" ]]; then
+    setup_cloudflare_tunnel
+  elif [[ "${WITH_CLOUDFLARE_TUNNEL}" == "prompt" ]]; then
+    prompt_cloudflare_tunnel
+  else
+    log 'Skipping Cloudflare Tunnel setup'
+  fi
+
   setup_systemd_service
   install_cli
 
