@@ -13,3 +13,5 @@ google-credentials.json
 data/
 models/piper/*.onnx
 models/piper/*.onnx.json
+models/wake-word/*.tflite
+models/wake-word/*.onnx

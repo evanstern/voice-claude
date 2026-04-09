@@ -1,0 +1,19 @@
+model_name: "coda"
+target_phrase:
+  - "coda"
+  - "hey coda"
+  - "ok coda"
+
+n_samples: 10000
+n_samples_val: 2000
+
+tts_batch_size: 50
+augmentation_batch_size: 16
+augmentation_rounds: 1
+
+model_type: "dnn"
+layer_size: 32
+
+steps: 50000
+max_negative_weight: 1500
+target_false_positives_per_hour: 0.2

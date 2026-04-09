@@ -22,6 +22,16 @@ export const PHASE_HINTS: Record<string, Record<string, string>> = {
     speaking: 'Tap to stop',
     done: 'Say “Coda”',
   },
+  'wake-word': {
+    idle: 'Connecting to wake-word...',
+    'passive-listening': 'Say "Coda" to activate',
+    recording: 'Speak now...',
+    transcribing: 'Processing...',
+    thinking: 'Tap to cancel',
+    synthesizing: 'Tap to cancel',
+    speaking: 'Tap to stop',
+    done: 'Returning to passive...',
+  },
 }
 
 /**
@@ -32,6 +42,11 @@ export const STATUS_PHASE_CONFIG: Record<
   string,
   { label: string; colorClass: string; showTimer: boolean }
 > = {
+  'passive-listening': {
+    label: 'Listening for "Coda"...',
+    colorClass: 'bg-emerald-500',
+    showTimer: false,
+  },
   recording: {
     label: 'Listening...',
     colorClass: 'bg-red-500',
