@@ -71,10 +71,8 @@ function normalizeLegacyRecord(raw: Record<string, unknown>): CostRecord {
     },
     usage: {
       sttDurationSec: usage.sttDurationSec ?? 0,
-      llmInputTokens:
-        usage.llmInputTokens ?? usage.claudeInputTokens ?? 0,
-      llmOutputTokens:
-        usage.llmOutputTokens ?? usage.claudeOutputTokens ?? 0,
+      llmInputTokens: usage.llmInputTokens ?? usage.claudeInputTokens ?? 0,
+      llmOutputTokens: usage.llmOutputTokens ?? usage.claudeOutputTokens ?? 0,
       llmCacheReadTokens:
         usage.llmCacheReadTokens ?? usage.claudeCacheReadTokens ?? 0,
       llmCacheWriteTokens:
