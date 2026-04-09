@@ -12,11 +12,19 @@ import { StatusIndicator } from '../components/status-indicator.js'
 import { useAudioSocket } from '../hooks/use-audio-socket.js'
 import { useSoundEffects } from '../hooks/use-sound-effects.js'
 import { useVAD } from '../hooks/use-vad.js'
+import { useWakeWord } from '../hooks/use-wake-word.js'
 import { getClientTRPC } from '../trpc/client.js'
+
+type InputMode = 'push-to-talk' | 'auto' | 'wake-word'
 
 interface RootContext {
   health: { status: string; timestamp: string } | null
   wsConfig: { path: string; port: number | null } | null
+  wakeWordConfig?: {
+    path: string
+    port: number | null
+    enabled: boolean
+  } | null
 }
 
 interface ConversationEntry {
@@ -39,7 +47,7 @@ export function meta() {
 }
 
 export default function Home() {
-  const { health, wsConfig } = useOutletContext<RootContext>()
+  const { health, wsConfig, wakeWordConfig } = useOutletContext<RootContext>()
 
   const wsUrl = useMemo(() => {
     if (typeof window === 'undefined' || !wsConfig) return null
@@ -54,6 +62,16 @@ export default function Home() {
     return `${protocol}//${host}${wsConfig.path}`
   }, [wsConfig])
 
+  const wakeWordWsUrl = useMemo(() => {
+    if (typeof window === 'undefined' || !wakeWordConfig?.enabled) return null
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const host =
+      wakeWordConfig.port != null
+        ? `${window.location.hostname}:${wakeWordConfig.port}`
+        : window.location.host
+    return `${protocol}//${host}${wakeWordConfig.path}`
+  }, [wakeWordConfig])
+
   const trpc = typeof window === 'undefined' ? null : getClientTRPC()
 
   const audio = useAudioSocket(wsUrl)
@@ -61,23 +79,54 @@ export default function Home() {
   const phaseRef = useRef(audio.phase)
   const spaceDownRef = useRef(false)
 
-  // Mode: push-to-talk (default) or auto (always-listening with VAD)
-  const [mode, setMode] = useState<'push-to-talk' | 'auto'>('push-to-talk')
+  const [mode, setMode] = useState<InputMode>('push-to-talk')
+  const isWakeWordMode = mode === 'wake-word'
+
+  const wakeWord = useWakeWord(wakeWordWsUrl, isWakeWordMode)
+
   const toggleMode = useCallback(() => {
     setMode((m) => {
-      if (m === 'auto') {
-        // Switching to push-to-talk: cancel any in-progress recording without sending
-        if (audio.phase === 'recording') {
-          audio.cancelRecording()
-        }
-        if (audio.phase === 'passive-listening') {
-          audio.stopPassiveListening()
-        }
-        return 'push-to-talk'
+      if (m === 'push-to-talk') return 'auto'
+      if (m === 'auto') return wakeWordWsUrl ? 'wake-word' : 'push-to-talk'
+      if (audio.phase === 'recording') {
+        audio.cancelRecording()
       }
-      return 'auto'
+      if (audio.phase === 'passive-listening') {
+        audio.stopPassiveListening?.()
+      }
+      return 'push-to-talk'
     })
-  }, [audio])
+  }, [audio, wakeWordWsUrl])
+
+  // Wake-word mode: set passive-listening phase and handle wake events
+  useEffect(() => {
+    if (!isWakeWordMode) return
+
+    if (wakeWord.listening && audio.phase === 'idle') {
+      audio.setPhase('passive-listening')
+    }
+
+    wakeWord.setOnWake(() => {
+      log.info('wake word detected, starting active recording')
+      play('commandAcknowledged')
+      wakeWord.pause()
+      audio.startRecording()
+    })
+
+    return () => wakeWord.setOnWake(null)
+  }, [isWakeWordMode, wakeWord, audio, play])
+
+  // Wake-word mode: return to passive listening after response completes
+  useEffect(() => {
+    if (!isWakeWordMode) return
+    if (audio.phase === 'done') {
+      const timer = setTimeout(() => {
+        wakeWord.resume()
+        audio.setPhase('passive-listening')
+      }, 500)
+      return () => clearTimeout(timer)
+    }
+  }, [isWakeWordMode, audio.phase, wakeWord, audio.setPhase])
 
   // VAD for auto mode
   const vad = useVAD(
@@ -447,6 +496,7 @@ export default function Home() {
   }, [audio, handleStartRecording])
 
   const showStatus =
+    audio.phase === 'passive-listening' ||
     audio.phase === 'recording' ||
     audio.phase === 'transcribing' ||
     audio.phase === 'thinking' ||

@@ -44,6 +44,19 @@ services:
     depends_on:
       - server
 
+  wake-word:
+    build:
+      context: ./services/wake-word
+    ports:
+      - "${WAKE_WORD_PORT:-9000}:9000"
+    env_file:
+      - .env
+    environment:
+      WAKE_WORD_PORT: "9000"
+      WAKE_WORD_MODEL: "${WAKE_WORD_MODEL:-}"
+    volumes:
+      - ${WAKE_WORD_MODELS_DIR:-./models/wake-word}:/models
+
   piper:
     build:
       context: ./docker/piper

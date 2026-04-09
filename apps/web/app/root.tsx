@@ -13,12 +13,13 @@ import { createServerTRPC } from './trpc/server.js'
 export async function loader({ context }: Route.LoaderArgs) {
   const ctx = context as { cookie?: string }
   const trpc = createServerTRPC(ctx.cookie ?? '')
-  const [health, wsConfig] = await Promise.all([
+  const [health, wsConfig, wakeWordConfig] = await Promise.all([
     trpc.health.check.query().catch(() => null),
     trpc.config.wsUrl.query().catch(() => null),
+    trpc.config.wakeWord.query().catch(() => null),
   ])
 
-  return { health, wsConfig }
+  return { health, wsConfig, wakeWordConfig }
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {

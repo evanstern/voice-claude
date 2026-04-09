@@ -24,6 +24,13 @@ export const appRouter = createRouter({
         : Number.parseInt(process.env.PORT ?? '4000', 10)
       return { path: '/ws/audio', port }
     }),
+    wakeWord: publicProcedure.query(() => {
+      const behindProxy = process.env.BEHIND_PROXY === 'true'
+      const port = behindProxy
+        ? null
+        : Number.parseInt(process.env.WAKE_WORD_PORT ?? '9000', 10)
+      return { path: '/ws', port, enabled: true }
+    }),
   }),
   stats: publicProcedure.query(() => {
     return getStats()
