@@ -3,16 +3,14 @@ import { appendCostRecord } from '../storage/costs.js'
 
 const log = logger.child({ module: 'cost' })
 
-// Pricing rates
+// Fallback pricing rates (Anthropic Claude Sonnet defaults).
+// Used only when the provider does not report cost via reportedCost.
 const RATES = {
-  // Whisper: $0.006 per minute of audio
   whisperPerMinute: 0.006,
   llmInputPer1M: 3,
   llmOutputPer1M: 15,
-  // Cache tokens: input tokens read from cache are 90% cheaper, write is 25% more
   llmCacheReadPer1M: 0.3,
   llmCacheWritePer1M: 3.75,
-  // OpenAI TTS (tts-1): $15 per 1M characters
   ttsCharsPer1M: 15,
 } as const
 

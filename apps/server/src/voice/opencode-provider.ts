@@ -40,6 +40,7 @@ export class OpenCodeProvider implements AIProvider {
     string,
     Array<{ role: 'user' | 'assistant'; content: string }>
   >()
+  private pendingSessionCreation = new Map<string, Promise<string>>()
   private evictionTimer: ReturnType<typeof setInterval>
 
   constructor() {
@@ -56,6 +57,8 @@ export class OpenCodeProvider implements AIProvider {
           )
           this.sessionMap.delete(sessionId)
           this.sessionLastActive.delete(sessionId)
+          this.pendingHistory.delete(sessionId)
+          this.pendingSessionCreation.delete(sessionId)
         }
       }
     }, SESSION_EVICTION_INTERVAL_MS)
@@ -152,6 +155,22 @@ export class OpenCodeProvider implements AIProvider {
     const existing = this.sessionMap.get(sessionId)
     if (existing) return existing
 
+    const inflight = this.pendingSessionCreation.get(sessionId)
+    if (inflight) return inflight
+
+    const promise = this.createSession(sessionId, signal)
+    this.pendingSessionCreation.set(sessionId, promise)
+    try {
+      return await promise
+    } finally {
+      this.pendingSessionCreation.delete(sessionId)
+    }
+  }
+
+  private async createSession(
+    sessionId: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
     const created = await this.request<OpenCodeSessionResponse>(
       '/session',
       {
