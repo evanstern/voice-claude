@@ -23,7 +23,7 @@ export interface VoiceInput {
 interface ProcessVoiceInputParams {
   rawText: string
   sessionId: string
-  provider: 'anthropic' | 'claude-code'
+  provider: string
 }
 
 const WORK_DIR = process.env.WORK_DIR ?? process.cwd()

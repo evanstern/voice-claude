@@ -17,7 +17,7 @@ import { chat, clearSession, restoreSession } from '../voice/claude.js'
 import {
   cleanupSession,
   finalizeInteraction,
-  recordClaude,
+  recordLLM,
   recordSTT,
   recordTTS,
 } from '../voice/cost-tracker.js'
@@ -114,7 +114,6 @@ export function attachWebSocket(httpServer: Server) {
             'conversation set',
           )
 
-          // Restore Claude session from persisted messages
           clearSession(sessionId)
           if (conversationId) {
             const conv = await getConversation(conversationId)
@@ -321,7 +320,7 @@ async function handleControl(
       }
 
       // Process voice input through middleware
-      const providerName = getAIProvider().name as 'anthropic' | 'claude-code'
+      const providerName = getAIProvider().name
       const voiceInput = await processVoiceInput({
         rawText: userText,
         sessionId,
@@ -367,7 +366,6 @@ async function handleControl(
         }
       }
 
-      // Phase 2: Send to Claude
       send(ws, { type: 'thinking' })
 
       if (voiceInput.operationalIntents.length > 0) {
@@ -389,7 +387,7 @@ async function handleControl(
           voiceInput.routingHint,
         )
 
-        recordClaude(sessionId, response.usage, response.model)
+        recordLLM(sessionId, response.usage, response.model, providerName)
 
         // Persist assistant message
         if (conversationId) {
@@ -401,10 +399,10 @@ async function handleControl(
         }
 
         if (signal.aborted) {
-          log.debug('cancelled after claude response')
+          log.debug('cancelled after ai response')
           // Still send the response text so it appears in chat, just skip TTS
           send(ws, {
-            type: 'claude_response',
+            type: 'ai_response',
             text: response.text,
             toolCalls: response.toolCalls,
           })
@@ -414,12 +412,11 @@ async function handleControl(
         }
 
         send(ws, {
-          type: 'claude_response',
+          type: 'ai_response',
           text: response.text,
           toolCalls: response.toolCalls,
         })
 
-        // Phase 3: TTS — synthesize Claude's spoken response to audio
         //   Filter out code blocks, inline code, and raw paths first so
         //   we only pay for (and hear) the conversational content.
         const spokenText = response.text ? filterForTTS(response.text) : ''
@@ -458,8 +455,8 @@ async function handleControl(
         finalizeInteraction(sessionId)
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error'
-        log.error({ err: message }, 'Claude error')
-        send(ws, { type: 'claude_response', text: '', error: message })
+        log.error({ err: message }, 'AI error')
+        send(ws, { type: 'ai_response', text: '', error: message })
         finalizeInteraction(sessionId)
       }
       clearAbort()

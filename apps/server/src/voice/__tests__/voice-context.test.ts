@@ -8,9 +8,9 @@ describe('buildVoiceContext', () => {
       '\nAvailable CLI tools: git (version control), node (Node.js runtime).',
   }
 
-  it('includes Voice Claude identity', () => {
+  it('includes Voice Assistant identity', () => {
     const ctx = buildVoiceContext(defaultOptions)
-    expect(ctx.systemPrompt).toContain('Voice Claude')
+    expect(ctx.systemPrompt).toContain('Voice Assistant')
     expect(ctx.systemPrompt).toContain('hands-free voice coding assistant')
   })
 
@@ -41,6 +41,14 @@ describe('buildVoiceContext', () => {
     expect(ctx.systemPrompt).toContain('Claude Code')
   })
 
+  it('mentions OpenCode when provider hint is opencode', () => {
+    const ctx = buildVoiceContext({
+      ...defaultOptions,
+      providerHint: 'opencode',
+    })
+    expect(ctx.systemPrompt).toContain('OpenCode')
+  })
+
   it('does not mention Claude Code when provider hint is anthropic', () => {
     const ctx = buildVoiceContext({
       ...defaultOptions,
@@ -51,7 +59,7 @@ describe('buildVoiceContext', () => {
 
   it('handles empty environment string', () => {
     const ctx = buildVoiceContext({ ...defaultOptions, environment: '' })
-    expect(ctx.systemPrompt).toContain('Voice Claude')
+    expect(ctx.systemPrompt).toContain('Voice Assistant')
     expect(ctx.systemPrompt).not.toContain('Available CLI tools')
   })
 })

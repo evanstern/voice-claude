@@ -1,5 +1,4 @@
 // Thin wrapper that delegates to the configured AI provider.
-// Preserves the original export signatures so audio.ts can migrate incrementally.
 
 import {
   type ChatParams,
@@ -7,9 +6,6 @@ import {
   getAIProvider,
 } from './ai-provider.js'
 import type { VoiceContext } from './voice-context.js'
-
-export type { ChatResponse as ClaudeResponse }
-export type ClaudeUsageResult = ChatResponse['usage']
 
 export async function chat(
   sessionId: string,

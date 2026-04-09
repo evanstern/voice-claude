@@ -18,7 +18,7 @@ describe('processVoiceInput', () => {
 
   it('returns voice context with system prompt', async () => {
     const result = await processVoiceInput(defaultInput)
-    expect(result.voiceContext.systemPrompt).toContain('Voice Claude')
+    expect(result.voiceContext.systemPrompt).toContain('Voice Assistant')
   })
 
   it('processes keywords and returns intents', async () => {
@@ -63,6 +63,14 @@ describe('processVoiceInput', () => {
       provider: 'anthropic',
     })
     expect(result.voiceContext.systemPrompt).not.toContain('Claude Code')
+  })
+
+  it('mentions OpenCode for opencode provider', async () => {
+    const result = await processVoiceInput({
+      ...defaultInput,
+      provider: 'opencode',
+    })
+    expect(result.voiceContext.systemPrompt).toContain('OpenCode')
   })
 
   it('separates displayText (clean) from chatText (with decorations)', async () => {

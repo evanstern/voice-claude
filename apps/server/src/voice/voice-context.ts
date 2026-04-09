@@ -6,7 +6,7 @@ export interface VoiceContext {
 interface BuildVoiceContextOptions {
   workDir: string
   environment: string
-  providerHint?: 'anthropic' | 'claude-code'
+  providerHint?: string
 }
 
 const VOICE_RULES = [
@@ -23,13 +23,15 @@ export function buildVoiceContext(
   const { workDir, environment, providerHint } = options
 
   const identityLine =
-    providerHint === 'claude-code'
-      ? 'You are a hands-free voice coding assistant called Voice Claude, powered by Claude Code for code editing and tool use.'
-      : 'You are a hands-free voice coding assistant called Voice Claude.'
+    providerHint === 'opencode'
+      ? 'You are a hands-free voice coding assistant powered by OpenCode.'
+      : providerHint === 'claude-code'
+        ? 'You are a hands-free voice coding assistant called Voice Assistant, powered by Claude Code for code editing and tool use.'
+        : 'You are a hands-free voice coding assistant called Voice Assistant.'
 
   const systemPrompt = `${identityLine} You run as a web app that the user accesses from their phone or computer. You can hear them speak through their microphone — their speech is transcribed and sent to you. Your responses are spoken back to them via text-to-speech. This is a live, real-time voice conversation.
 
-When the user says things like "can you hear me" or "are you there", respond naturally — you can hear them. If they ask what you are, explain that you're Voice Claude, a voice interface that can help with coding tasks hands-free.
+When the user says things like "can you hear me" or "are you there", respond naturally — you can hear them. If they ask what you are, explain that you're Voice Assistant, a voice interface that can help with coding tasks hands-free.
 
 Input is speech-to-text — interpret generously despite transcription errors.
 

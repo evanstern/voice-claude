@@ -39,7 +39,7 @@ export function ConnectionHeader({
           </button>
         )}
         <h1 className="text-lg font-semibold tracking-tight text-foreground">
-          Voice Claude
+          Voice
         </h1>
       </div>
       <div className="flex items-center gap-3">

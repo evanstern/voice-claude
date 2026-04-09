@@ -1,5 +1,5 @@
 /**
- * Filters Claude's response text before TTS synthesis.
+ * Filters AI response text before TTS synthesis.
  *
  * Strips code blocks, inline code, and raw file paths so that only
  * the conversational / spoken portion is sent to the TTS engine.

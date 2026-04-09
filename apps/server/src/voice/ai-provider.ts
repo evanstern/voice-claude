@@ -1,6 +1,7 @@
 import { logger } from '../logger.js'
 import { AnthropicProvider } from './anthropic-provider.js'
 import { ClaudeCodeProvider } from './claude-code-provider.js'
+import { OpenCodeProvider } from './opencode-provider.js'
 import type { VoiceContext } from './voice-context.js'
 
 const log = logger.child({ module: 'ai' })
@@ -41,6 +42,7 @@ export interface ChatResponse {
 const providers: Record<string, () => AIProvider> = {
   anthropic: () => new AnthropicProvider(),
   'claude-code': () => new ClaudeCodeProvider(),
+  opencode: () => new OpenCodeProvider(),
 }
 
 let cached: AIProvider | null = null
